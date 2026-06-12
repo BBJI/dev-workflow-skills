@@ -33,13 +33,13 @@ Write-Host ""
 if ($Help) {
     Write-Host "用法:"
     Write-Host "  # 一键安装到 Claude Code（PowerShell）"
-    Write-Host "  irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.ps1 | iex"
+    Write-Host "  irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 | iex"
     Write-Host ""
     Write-Host "  # 一键安装到 Claude Code（CMD）"
-    Write-Host '  powershell -Command "irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.ps1 | iex"'
+    Write-Host '  powershell -Command "irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 | iex"'
     Write-Host ""
     Write-Host "  # 同时安装到 Claude Code + Codex"
-    Write-Host "  irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.ps1 -OutFile install.ps1"
+    Write-Host "  irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 -OutFile install.ps1"
     Write-Host '  .\install.ps1 -Codex -Project "C:\my-app"'
     Write-Host ""
     Write-Host "参数:"
@@ -242,9 +242,9 @@ if ($Codex) {
     # 从仓库下载 AGENTS.md
     $downloadUrl = ""
     if ($REPO_URL -match "github\.com") {
-        $downloadUrl = $REPO_URL -replace '\.git$', '/raw/main/codex/AGENTS.md'
+        $downloadUrl = $REPO_URL -replace '\.git$', '/raw/master/codex/AGENTS.md'
     } elseif ($REPO_URL -match "gitlab") {
-        $downloadUrl = $REPO_URL -replace '\.git$', '/-/raw/main/codex/AGENTS.md'
+        $downloadUrl = $REPO_URL -replace '\.git$', '/-/raw/master/codex/AGENTS.md'
     }
 
     $downloaded = $false

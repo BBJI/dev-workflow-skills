@@ -30,19 +30,19 @@
 ### Windows（PowerShell）
 
 ```powershell
-irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 | iex
 ```
 
 ### Windows（CMD）
 
 ```cmd
-powershell -Command "irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.ps1 | iex"
+powershell -Command "irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 | iex"
 ```
 
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.sh | bash
 ```
 
 安装后重启 Claude Code，即可使用所有 `/req`、`/design`、`/workflow` 等指令。
@@ -51,13 +51,13 @@ curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/insta
 
 ```powershell
 # PowerShell
-irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.ps1 -OutFile install.ps1
+irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 -OutFile install.ps1
 .\install.ps1 -Codex -Project "C:\my-app"
 ```
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash -s -- --codex --project /path/to/your/project
+curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.sh | bash -s -- --codex --project /path/to/your/project
 ```
 
 这会在目标项目中生成 `AGENTS.md`，Codex 自动读取。
@@ -72,20 +72,20 @@ irm ... -OutFile install.ps1
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash -s -- --repo https://gitlab.example.com/skills/dev-workflow-skills.git
+curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.sh | bash -s -- --repo https://gitlab.example.com/skills/dev-workflow-skills.git
 ```
 
 ### 卸载
 
 ```powershell
 # PowerShell
-irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.ps1 -OutFile install.ps1
+irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 -OutFile install.ps1
 .\install.ps1 -Uninstall
 ```
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.sh | bash -s -- --uninstall
 ```
 
 ## 使用方式

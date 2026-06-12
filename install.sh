@@ -144,10 +144,10 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "示例:"
       echo "  # 一键安装到 Claude Code"
-      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash"
+      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.sh | bash"
       echo ""
       echo "  # 同时安装到 Claude Code + Codex"
-      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash -s -- --codex --project ./my-app"
+      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.sh | bash -s -- --codex --project ./my-app"
       echo ""
       echo "  # 使用内部 GitLab"
       echo "  curl -fsSL https://gitlab.example.com/skills/install.sh | bash -s -- --repo https://gitlab.example.com/skills/dev-workflow-skills.git"
@@ -252,11 +252,11 @@ install_codex() {
   fi
 
   # 下载 AGENTS.md（从仓库 raw URL）
-  local AGENTS_URL="${REPO_URL%.git}/raw/main/codex/AGENTS.md"
+  local AGENTS_URL="${REPO_URL%.git}/raw/master/codex/AGENTS.md"
 
   # 如果是 gitlab，URL 格式不同
   if echo "$REPO_URL" | grep -q "gitlab"; then
-    AGENTS_URL="${REPO_URL%.git}/-/raw/main/codex/AGENTS.md"
+    AGENTS_URL="${REPO_URL%.git}/-/raw/master/codex/AGENTS.md"
   fi
 
   if command -v curl &> /dev/null; then
