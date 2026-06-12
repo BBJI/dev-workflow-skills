@@ -1,21 +1,21 @@
 #!/bin/bash
 # ============================================
-# Coral Dev Skills — 一键安装脚本
+# Dev Skills — 一键安装脚本
 # 无需 clone，一条命令直接安装到 Claude Code 和 Codex
 # ============================================
 
 set -e
 
-PLUGIN_NAME="coral-dev-skills"
+PLUGIN_NAME="dev-skills"
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 
 # 默认仓库地址（可通过环境变量覆盖）
-REPO_URL="${CORAL_DEV_SKILLS_REPO:-https://github.com/BBJI/coral-dev-skills.git}"
+REPO_URL="${DEV_SKILLS_REPO:-https://github.com/BBJI/dev-skills.git}"
 
 echo ""
 echo "╔══════════════════════════════════════════════╗"
-echo "║   Coral Dev Skills — 一键安装                ║"
+echo "║   Dev Skills — 一键安装                      ║"
 echo "║   Loop Engineering 全流程交付技能套件         ║"
 echo "╚══════════════════════════════════════════════╝"
 echo ""
@@ -48,13 +48,13 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "示例:"
       echo "  # 一键安装到 Claude Code"
-      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/coral-dev-skills/main/install.sh | bash"
+      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/dev-skills/main/install.sh | bash"
       echo ""
       echo "  # 同时安装到 Claude Code + Codex"
-      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/coral-dev-skills/main/install.sh | bash -s -- --codex --project ./my-app"
+      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/dev-skills/main/install.sh | bash -s -- --codex --project ./my-app"
       echo ""
       echo "  # 使用内部 GitLab"
-      echo "  curl -fsSL https://gitlab.example.com/skills/install.sh | bash -s -- --repo https://gitlab.example.com/skills/coral-dev-skills.git"
+      echo "  curl -fsSL https://gitlab.example.com/skills/install.sh | bash -s -- --repo https://gitlab.example.com/skills/dev-skills.git"
       exit 0
       ;;
     *)
@@ -73,7 +73,7 @@ fi
 # 卸载
 # -------------------------------------------
 if [ "$UNINSTALL" = true ]; then
-  echo "📦 卸载 Coral Dev Skills..."
+  echo "📦 卸载 Dev Skills..."
 
   if [ -f "$SETTINGS_FILE" ]; then
     if command -v node &> /dev/null; then
@@ -255,7 +255,7 @@ generate_agents_md() {
   fi
 
   cat > "$TARGET" << 'AGENTSEOF'
-# Coral Dev Skills — AI 自主交付工作流
+# Dev Skills — AI 自主交付工作流
 
 ## 概述
 本文件为 OpenAI Codex 提供全流程软件交付工作流指令。基于 Loop Engineering 原则，支持从需求到交付的自主闭环。

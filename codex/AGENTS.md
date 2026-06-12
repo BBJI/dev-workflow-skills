@@ -1,4 +1,4 @@
-# Coral Dev Skills — AI 自主交付工作流
+# Dev Skills — AI 自主交付工作流
 
 ## 概述
 本文件为 OpenAI Codex 提供全流程软件交付工作流指令。基于 Loop Engineering 原则，支持从需求到交付的自主闭环。
