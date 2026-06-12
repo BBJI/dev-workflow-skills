@@ -1,0 +1,32 @@
+{
+  "name": "dev-workflow-skills",
+  "id": "dev-workflow-skills",
+  "owner": {
+    "name": "Dev Skills Team"
+  },
+  "metadata": {
+    "description": "基于 Loop Engineering 的全流程 AI 自主交付技能套件",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "dev-workflow-skills",
+      "source": "./",
+      "description": "全流程 AI 自主交付技能套件，覆盖需求分析、UI/UX设计、实现评估、任务拆分、开发实现、测试验证、项目规范生成和全流程编排8个技能",
+      "version": "1.0.0",
+      "author": {
+        "name": "Dev Skills Team"
+      },
+      "keywords": [
+        "workflow",
+        "requirements",
+        "design",
+        "development",
+        "testing",
+        "loop-engineering"
+      ],
+      "category": "development",
+      "strict": false
+    }
+  ]
+}

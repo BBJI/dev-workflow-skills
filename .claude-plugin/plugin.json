@@ -1,8 +1,21 @@
 {
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "dev-workflow-skills",
+  "version": "1.0.0",
   "description": "基于Loop Engineering的全流程AI自主交付技能套件。包含需求分析、UI/UX设计、实现评估、任务拆分、开发实现、测试、项目规范生成和全流程编排8个技能，支持单独指令触发和全流程一键执行。",
   "author": {
-    "name": "Dev Skills Team",
-    "email": "john.niu@devskills.dev"
-  }
+    "name": "Dev Skills Team"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/BBJI/dev-workflow-skills",
+  "repository": "https://github.com/BBJI/dev-workflow-skills.git",
+  "keywords": [
+    "workflow",
+    "requirements",
+    "design",
+    "development",
+    "testing",
+    "loop-engineering"
+  ],
+  "category": "development"
 }
