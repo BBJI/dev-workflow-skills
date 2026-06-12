@@ -63,9 +63,9 @@ if (-not $Claude -and -not $Codex -and -not $Uninstall) {
 $NodeInstallScript = @'
 const fs = require('fs');
 const path = require('path');
-const settingsPath = process.argv[1];
-const pluginName = process.argv[2];
-const repoUrl = process.argv[3];
+const settingsPath = process.argv[2];
+const pluginName = process.argv[3];
+const repoUrl = process.argv[4];
 
 try {
     const dir = path.dirname(settingsPath);
@@ -113,8 +113,8 @@ try {
 
 $NodeUninstallScript = @'
 const fs = require('fs');
-const settingsPath = process.argv[1];
-const pluginName = process.argv[2];
+const settingsPath = process.argv[2];
+const pluginName = process.argv[3];
 
 try {
     if (!fs.existsSync(settingsPath)) { process.exit(0); }
@@ -141,11 +141,12 @@ try {
 '@
 
 function Run-NodeScript {
-    param([string]$Script, [string[]]$Args)
+    param([string]$Script, [string[]]$NodeArgs)
     $tempFile = [System.IO.Path]::GetTempFileName() + ".js"
     try {
-        $Script | Set-Content $tempFile -Encoding UTF8
-        & node $tempFile @Args
+        $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+        [System.IO.File]::WriteAllText($tempFile, $Script, $utf8NoBom)
+        & node $tempFile @NodeArgs
     } finally {
         Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
     }

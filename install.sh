@@ -34,8 +34,8 @@ run_node_install() {
     cat > "$TEMP_FILE" << 'NODEEOF'
 const fs = require('fs');
 const path = require('path');
-const settingsPath = process.argv[1];
-const pluginName = process.argv[2];
+const settingsPath = process.argv[2];
+const pluginName = process.argv[3];
 
 try {
     if (!fs.existsSync(settingsPath)) { process.exit(0); }
@@ -65,9 +65,9 @@ NODEEOF
     cat > "$TEMP_FILE" << 'NODEEOF'
 const fs = require('fs');
 const path = require('path');
-const settingsPath = process.argv[1];
-const pluginName = process.argv[2];
-const repoUrl = process.argv[3];
+const settingsPath = process.argv[2];
+const pluginName = process.argv[3];
+const repoUrl = process.argv[4];
 
 try {
     const dir = path.dirname(settingsPath);
