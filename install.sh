@@ -1,0 +1,382 @@
+#!/bin/bash
+# ============================================
+# Coral Dev Skills — 一键安装脚本
+# 无需 clone，一条命令直接安装到 Claude Code 和 Codex
+# ============================================
+
+set -e
+
+PLUGIN_NAME="coral-dev-skills"
+CLAUDE_DIR="$HOME/.claude"
+SETTINGS_FILE="$CLAUDE_DIR/settings.json"
+
+# 默认仓库地址（可通过环境变量覆盖）
+REPO_URL="${CORAL_DEV_SKILLS_REPO:-https://github.com/BBJI/coral-dev-skills.git}"
+
+echo ""
+echo "╔══════════════════════════════════════════════╗"
+echo "║   Coral Dev Skills — 一键安装                ║"
+echo "║   Loop Engineering 全流程交付技能套件         ║"
+echo "╚══════════════════════════════════════════════╝"
+echo ""
+
+# -------------------------------------------
+# 解析参数
+# -------------------------------------------
+INSTALL_CLAUDE=false
+INSTALL_CODEX=false
+TARGET_PROJECT=""
+UNINSTALL=false
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --claude)   INSTALL_CLAUDE=true; shift ;;
+    --codex)    INSTALL_CODEX=true; shift ;;
+    --project)  TARGET_PROJECT="$2"; shift 2 ;;
+    --repo)     REPO_URL="$2"; shift 2 ;;
+    --uninstall) UNINSTALL=true; shift ;;
+    --help|-h)
+      echo "用法: curl -fsSL <url>/install.sh | bash -s -- [选项]"
+      echo ""
+      echo "选项:"
+      echo "  --claude           安装到 Claude Code（默认包含）"
+      echo "  --codex            同时为 Codex 生成 AGENTS.md"
+      echo "  --project <path>   Codex 目标项目目录"
+      echo "  --repo <url>       自定义 git 仓库地址"
+      echo "  --uninstall        卸载"
+      echo "  -h, --help         显示帮助"
+      echo ""
+      echo "示例:"
+      echo "  # 一键安装到 Claude Code"
+      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/coral-dev-skills/main/install.sh | bash"
+      echo ""
+      echo "  # 同时安装到 Claude Code + Codex"
+      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/coral-dev-skills/main/install.sh | bash -s -- --codex --project ./my-app"
+      echo ""
+      echo "  # 使用内部 GitLab"
+      echo "  curl -fsSL https://gitlab.example.com/skills/install.sh | bash -s -- --repo https://gitlab.example.com/skills/coral-dev-skills.git"
+      exit 0
+      ;;
+    *)
+      echo "未知参数: $1，使用 --help 查看帮助"
+      exit 1
+      ;;
+  esac
+done
+
+# 默认安装到 Claude Code
+if [ "$INSTALL_CLAUDE" = false ] && [ "$INSTALL_CODEX" = false ] && [ "$UNINSTALL" = false ]; then
+  INSTALL_CLAUDE=true
+fi
+
+# -------------------------------------------
+# 卸载
+# -------------------------------------------
+if [ "$UNINSTALL" = true ]; then
+  echo "📦 卸载 Coral Dev Skills..."
+
+  if [ -f "$SETTINGS_FILE" ]; then
+    if command -v node &> /dev/null; then
+      node -e "
+        const fs = require('fs');
+        const s = JSON.parse(fs.readFileSync('$SETTINGS_FILE', 'utf8'));
+        const key = '$PLUGIN_NAME@$PLUGIN_NAME';
+        if (s.enabledPlugins && s.enabledPlugins[key]) {
+          delete s.enabledPlugins[key];
+          console.log('  ✅ 已从 enabledPlugins 移除');
+        }
+        if (s.extraKnownMarketplaces && s.extraKnownMarketplaces['$PLUGIN_NAME']) {
+          delete s.extraKnownMarketplaces['$PLUGIN_NAME'];
+          console.log('  ✅ 已从 marketplaces 移除');
+        }
+        fs.writeFileSync('$SETTINGS_FILE', JSON.stringify(s, null, 2));
+      "
+    fi
+  fi
+
+  # 清理缓存
+  CACHE_DIR="$CLAUDE_DIR/plugins/cache/$PLUGIN_NAME"
+  MARKET_DIR="$CLAUDE_DIR/plugins/marketplaces/$PLUGIN_NAME"
+  rm -rf "$CACHE_DIR" "$MARKET_DIR" 2>/dev/null
+  echo "  ✅ 缓存已清理"
+  echo ""
+  echo "🎉 卸载完成！重启 Claude Code 即可生效。"
+  exit 0
+fi
+
+# -------------------------------------------
+# 安装到 Claude Code
+# -------------------------------------------
+install_claude() {
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "📦 安装到 Claude Code..."
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  仓库: $REPO_URL"
+
+  # 检查 settings.json 是否存在
+  if [ ! -f "$SETTINGS_FILE" ]; then
+    echo "  ⚠️  未找到 $SETTINGS_FILE"
+    echo "  请先启动一次 Claude Code 以生成配置文件"
+    return 1
+  fi
+
+  # 使用 node 更新 settings.json
+  if ! command -v node &> /dev/null; then
+    echo "  ❌ 需要 Node.js 来更新配置文件"
+    echo "  请手动编辑 ~/.claude/settings.json："
+    echo ""
+    echo '  1. 在 enabledPlugins 中添加:'
+    echo '     "'$PLUGIN_NAME'@'$PLUGIN_NAME'": true'
+    echo ""
+    echo '  2. 在 extraKnownMarketplaces 中添加:'
+    echo '     "'$PLUGIN_NAME'": {'
+    echo '       "source": { "source": "git", "url": "'$REPO_URL'" }'
+    echo '     }'
+    return 1
+  fi
+
+  node -e "
+    const fs = require('fs');
+    const settingsPath = '$SETTINGS_FILE';
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    let changed = false;
+
+    // 1. 注册 marketplace
+    if (!settings.extraKnownMarketplaces) settings.extraKnownMarketplaces = {};
+    if (!settings.extraKnownMarketplaces['$PLUGIN_NAME']) {
+      settings.extraKnownMarketplaces['$PLUGIN_NAME'] = {
+        source: { source: 'git', url: '$REPO_URL' }
+      };
+      console.log('  ✅ 已注册 marketplace');
+      changed = true;
+    } else {
+      console.log('  ℹ️  marketplace 已存在');
+    }
+
+    // 2. 启用插件
+    if (!settings.enabledPlugins) settings.enabledPlugins = {};
+    const key = '$PLUGIN_NAME@$PLUGIN_NAME';
+    if (!settings.enabledPlugins[key]) {
+      settings.enabledPlugins[key] = true;
+      console.log('  ✅ 已启用插件');
+      changed = true;
+    } else {
+      console.log('  ℹ️  插件已启用');
+    }
+
+    if (changed) {
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+      console.log('  ✅ settings.json 已更新');
+    } else {
+      console.log('  ℹ️  无需更新，插件已安装');
+    }
+  "
+
+  echo ""
+  echo "  🎉 Claude Code 安装完成！"
+  echo ""
+  echo "  可用命令（重启 Claude Code 后生效）："
+  echo "    /req <需求描述>      — 需求调研分析"
+  echo "    /design              — UI/UX 设计"
+  echo "    /review              — 实现评估"
+  echo "    /task                — 任务拆分排期"
+  echo "    /dev <任务描述>      — 开发实现"
+  echo "    /test                — 测试验证"
+  echo "    /instruct            — 项目规范生成"
+  echo "    /workflow <需求描述> — 全流程交付"
+}
+
+# -------------------------------------------
+# 安装到 Codex
+# -------------------------------------------
+install_codex() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "📦 为 Codex 生成 AGENTS.md..."
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  if [ -z "$TARGET_PROJECT" ]; then
+    echo "  ⚠️  Codex 安装需要指定项目目录"
+    echo "  用法: ... | bash -s -- --codex --project /path/to/project"
+    read -p "  请输入目标项目路径: " TARGET_PROJECT
+    if [ -z "$TARGET_PROJECT" ]; then
+      echo "  跳过 Codex 安装"
+      return
+    fi
+  fi
+
+  # 展开相对路径
+  TARGET_PROJECT=$(cd "$TARGET_PROJECT" 2>/dev/null && pwd || echo "$TARGET_PROJECT")
+
+  if [ ! -d "$TARGET_PROJECT" ]; then
+    echo "  ❌ 目录不存在: $TARGET_PROJECT"
+    return 1
+  fi
+
+  # 下载 AGENTS.md（从仓库 raw URL）
+  local AGENTS_URL="${REPO_URL%.git}/raw/main/codex/AGENTS.md"
+
+  # 如果是 gitlab，URL 格式不同
+  if echo "$REPO_URL" | grep -q "gitlab"; then
+    AGENTS_URL="${REPO_URL%.git}/-/raw/main/codex/AGENTS.md"
+  fi
+
+  if command -v curl &> /dev/null; then
+    echo "  → 下载 AGENTS.md 到 $TARGET_PROJECT/AGENTS.md ..."
+    if curl -fsSL "$AGENTS_URL" -o "$TARGET_PROJECT/AGENTS.md" 2>/dev/null; then
+      echo "  ✅ AGENTS.md 已生成"
+    else
+      echo "  ⚠️  无法从仓库下载，尝试本地生成..."
+      generate_agents_md
+    fi
+  else
+    echo "  → 无 curl，本地生成 AGENTS.md ..."
+    generate_agents_md
+  fi
+
+  echo ""
+  echo "  🎉 Codex 安装完成！"
+  echo "  📋 请根据项目编辑 AGENTS.md 中的常用命令和项目结构"
+}
+
+# 本地生成 AGENTS.md（当无法从仓库下载时的回退方案）
+generate_agents_md() {
+  local TARGET="$TARGET_PROJECT/AGENTS.md"
+
+  if [ -f "$TARGET" ]; then
+    echo "  ⚠️  已存在 AGENTS.md"
+    read -p "  是否覆盖？(y/N): " overwrite
+    if [ "$overwrite" != "y" ] && [ "$overwrite" != "Y" ]; then
+      echo "  跳过"
+      return
+    fi
+    cp "$TARGET" "$TARGET.bak"
+    echo "  ✅ 已备份原文件"
+  fi
+
+  cat > "$TARGET" << 'AGENTSEOF'
+# Coral Dev Skills — AI 自主交付工作流
+
+## 概述
+本文件为 OpenAI Codex 提供全流程软件交付工作流指令。基于 Loop Engineering 原则，支持从需求到交付的自主闭环。
+
+## 角色能力
+你同时具备以下8种角色能力，按需切换：
+
+### 1. 需求分析师
+- 将模糊想法转化为结构化需求（FR-xxx + NFR-xxx）
+- 强制澄清步骤不可跳过
+- 输出：需求文档、追溯矩阵、待决问题/风险
+
+### 2. UI/UX 设计师
+- 将需求转化为设计规范（设计令牌、组件规格、页面布局、交互模式）
+- 所有组件必须覆盖完整状态（默认/悬停/聚焦/禁用/加载/错误）
+- 无障碍作为默认要求（WCAG 2.2 AA）
+- 输出：设计规范、用户流程、页面规格、设计决策日志
+
+### 3. 实现评审员
+- 三维度评估：需求覆盖、设计一致性、技术可行性
+- 识别跨维度缺口
+- 按致命/高/中/低分级风险
+- 输出：评估报告、风险登记
+
+### 4. 任务协调者
+- 分解为50-200行代码的原子任务
+- 构建依赖图和关键路径
+- MoSCoW优先级 + 执行优先级
+- 输出：任务分解、迭代计划、进度跟踪器
+
+### 5. 开发者
+- 按规格编码，匹配项目现有模式
+- 同步编写测试（测试金字塔：单元>集成>E2E）
+- Bug修复必须先写失败测试
+- 输出：实现代码、测试代码、完成报告
+
+### 6. 测试工程师
+- 功能/非功能/无障碍/安全/视觉一致性全维度测试
+- Bug报告必须包含复现步骤
+- 回归测试验证修复不引入新问题
+- 输出：测试结果、Bug报告、通过/不通过评估
+
+### 7. 规范生成器
+- 为 AI 编程工具生成项目规范文件
+- 已有项目：流程前生成；新项目：流程后生成
+- 支持 CLAUDE.md、AGENTS.md、.cursor/rules/、copilot-instructions.md
+- 输出：各工具格式的规范文件
+
+### 8. 工作流编排者
+- 编排以上7种角色形成闭环
+- 开发↔测试形成收敛循环（最多3轮Bug修复）
+- 门控检查：每个阶段有退出条件
+- 人工检查点：可配置自主级别
+
+## 常用命令
+| 操作 | 命令 |
+|------|------|
+| 安装依赖 | `npm install` |
+| 启动开发 | `npm run dev` |
+| 运行测试 | `npm test` |
+| 代码检查 | `npm run lint` |
+| 构建 | `npm run build` |
+
+## 工作流程
+### 判断项目类型
+- 已有项目：先执行项目规范生成，再进入需求分析
+- 新项目：先进入需求分析，最后生成项目规范
+
+### 阶段顺序
+1. 项目规范（条件执行）
+2. 需求分析 — 澄清→分解→结构化→验证
+3. UI/UX设计 — 信息架构→用户流程→设计令牌→组件→页面→交互
+4. 实现评估 — 需求覆盖→一致性→可行性→缺口→风险
+5. 任务拆分 — 识别→映射→依赖→估算→优先级→迭代计划
+6. 开发实现 — 理解→探索→实现→测试→自检→Bug修复
+7. 测试验证 — 功能→非功能→无障碍→安全→视觉→回归→报告
+8. 项目规范（新项目）
+
+### 收敛规则
+- 开发↔测试闭环最多3轮Bug修复
+- Bug数量应递减：[N] → [N/3] → [0]
+- 3轮不收敛则暂停分析根因
+
+## 规则与约束
+- 不要跳过需求澄清步骤
+- 不要只设计正常路径
+- 非功能需求是一等公民
+- Bug修复必须先写失败测试
+- 每个设计决策都要追溯到需求
+- 规范文件保持在200行以内
+- 用祈使句和可量化标准
+
+## 术语表
+| 术语 | 含义 |
+|------|------|
+| FR-xxx | 功能需求编号 |
+| NFR-xxx | 非功能需求编号 |
+| MoSCoW | Must/Should/Could/Won't 优先级 |
+| Loop Engineering | 收敛反馈闭环的工程方法 |
+AGENTSEOF
+
+  echo "  ✅ AGENTS.md 已本地生成"
+}
+
+# -------------------------------------------
+# 执行安装
+# -------------------------------------------
+if [ "$INSTALL_CLAUDE" = true ]; then
+  install_claude
+fi
+
+if [ "$INSTALL_CODEX" = true ]; then
+  install_codex
+fi
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ 安装完成！"
+echo ""
+echo "💡 使用提示:"
+echo "  • 重启 Claude Code 后输入 /workflow 启动全流程"
+echo "  • 也可单独使用 /req, /design 等触发特定阶段"
+echo "  • 卸载: curl -fsSL <url>/install.sh | bash -s -- --uninstall"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
