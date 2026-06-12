@@ -6,12 +6,12 @@
 
 set -e
 
-PLUGIN_NAME="dev-skills"
+PLUGIN_NAME="dev-workflow-skills"
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 
 # 默认仓库地址（可通过环境变量覆盖）
-REPO_URL="${DEV_SKILLS_REPO:-https://github.com/BBJI/dev-skills.git}"
+REPO_URL="${DEV_WORKFLOW_SKILLS_REPO:-https://github.com/BBJI/dev-workflow-skills.git}"
 
 echo ""
 echo "╔══════════════════════════════════════════════╗"
@@ -48,13 +48,13 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "示例:"
       echo "  # 一键安装到 Claude Code"
-      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/dev-skills/main/install.sh | bash"
+      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash"
       echo ""
       echo "  # 同时安装到 Claude Code + Codex"
-      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/dev-skills/main/install.sh | bash -s -- --codex --project ./my-app"
+      echo "  curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash -s -- --codex --project ./my-app"
       echo ""
       echo "  # 使用内部 GitLab"
-      echo "  curl -fsSL https://gitlab.example.com/skills/install.sh | bash -s -- --repo https://gitlab.example.com/skills/dev-skills.git"
+      echo "  curl -fsSL https://gitlab.example.com/skills/install.sh | bash -s -- --repo https://gitlab.example.com/skills/dev-workflow-skills.git"
       exit 0
       ;;
     *)
