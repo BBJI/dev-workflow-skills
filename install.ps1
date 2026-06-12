@@ -79,25 +79,17 @@ try {
     let changed = false;
 
     if (!settings.extraKnownMarketplaces) settings.extraKnownMarketplaces = {};
-    if (!settings.extraKnownMarketplaces[pluginName]) {
-        settings.extraKnownMarketplaces[pluginName] = {
-            source: { source: 'git', url: repoUrl }
-        };
-        console.log('  [OK] marketplace 已注册');
-        changed = true;
-    } else {
-        console.log('  [INFO] marketplace 已存在');
-    }
+    settings.extraKnownMarketplaces[pluginName] = {
+        source: { source: 'git', url: repoUrl }
+    };
+    console.log('  [OK] marketplace 已注册/更新');
+    changed = true;
 
     if (!settings.enabledPlugins) settings.enabledPlugins = {};
     const key = pluginName + '@' + pluginName;
-    if (!settings.enabledPlugins[key]) {
-        settings.enabledPlugins[key] = true;
-        console.log('  [OK] 插件已启用');
-        changed = true;
-    } else {
-        console.log('  [INFO] 插件已启用');
-    }
+    settings.enabledPlugins[key] = true;
+    console.log('  [OK] 插件已启用/更新');
+    changed = true;
 
     if (changed) {
         fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
@@ -185,6 +177,18 @@ if ($Claude) {
 
     if (Get-Command node -ErrorAction SilentlyContinue) {
         Run-NodeScript $NodeInstallScript @($SETTINGS_FILE, $PLUGIN_NAME, $REPO_URL)
+
+        # 清除旧缓存，强制 Claude Code 重新拉取
+        $cacheDir = Join-Path $CLAUDE_DIR "plugins\cache\$PLUGIN_NAME"
+        $marketDir = Join-Path $CLAUDE_DIR "plugins\marketplaces\$PLUGIN_NAME"
+        if (Test-Path $cacheDir) {
+            Remove-Item $cacheDir -Recurse -Force
+            Write-Host "  [OK] 插件缓存已清除，重启后将重新拉取" -ForegroundColor Green
+        }
+        if (Test-Path $marketDir) {
+            Remove-Item $marketDir -Recurse -Force
+            Write-Host "  [OK] marketplace 缓存已清除" -ForegroundColor Green
+        }
     } else {
         Write-Host "  [ERROR] 需要 Node.js 来更新配置文件" -ForegroundColor Red
         Write-Host ""

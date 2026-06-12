@@ -81,25 +81,17 @@ try {
     let changed = false;
 
     if (!settings.extraKnownMarketplaces) settings.extraKnownMarketplaces = {};
-    if (!settings.extraKnownMarketplaces[pluginName]) {
-        settings.extraKnownMarketplaces[pluginName] = {
-            source: { source: 'git', url: repoUrl }
-        };
-        console.log('  ✅ marketplace 已注册');
-        changed = true;
-    } else {
-        console.log('  ℹ️  marketplace 已存在');
-    }
+    settings.extraKnownMarketplaces[pluginName] = {
+        source: { source: 'git', url: repoUrl }
+    };
+    console.log('  ✅ marketplace 已注册/更新');
+    changed = true;
 
     if (!settings.enabledPlugins) settings.enabledPlugins = {};
     const key = pluginName + '@' + pluginName;
-    if (!settings.enabledPlugins[key]) {
-        settings.enabledPlugins[key] = true;
-        console.log('  ✅ 插件已启用');
-        changed = true;
-    } else {
-        console.log('  ℹ️  插件已启用');
-    }
+    settings.enabledPlugins[key] = true;
+    console.log('  ✅ 插件已启用/更新');
+    changed = true;
 
     if (changed) {
         fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
@@ -209,6 +201,18 @@ install_claude() {
   fi
 
   run_node_install install
+
+  # 清除旧缓存，强制 Claude Code 重新拉取
+  CACHE_DIR="$CLAUDE_DIR/plugins/cache/$PLUGIN_NAME"
+  MARKET_DIR="$CLAUDE_DIR/plugins/marketplaces/$PLUGIN_NAME"
+  if [ -d "$CACHE_DIR" ]; then
+    rm -rf "$CACHE_DIR"
+    echo "  ✅ 插件缓存已清除，重启后将重新拉取"
+  fi
+  if [ -d "$MARKET_DIR" ]; then
+    rm -rf "$MARKET_DIR"
+    echo "  ✅ marketplace 缓存已清除"
+  fi
 
   echo ""
   echo "  🎉 Claude Code 安装完成！"
