@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================
-# Dev Skills — 一键安装脚本
+# Dev Workflow Skills — 一键安装脚本
 # 无需 clone，一条命令直接安装到 Claude Code 和 Codex
 # ============================================
 
@@ -15,10 +15,106 @@ REPO_URL="${DEV_WORKFLOW_SKILLS_REPO:-https://github.com/BBJI/dev-workflow-skill
 
 echo ""
 echo "╔══════════════════════════════════════════════╗"
-echo "║   Dev Skills — 一键安装                      ║"
-echo "║   Loop Engineering 全流程交付技能套件         ║"
+echo "║   Dev Workflow Skills — 一键安装             ║"
+echo "║   Loop Engineering 全流程交付技能套件        ║"
 echo "╚══════════════════════════════════════════════╝"
 echo ""
+
+# -------------------------------------------
+# Node.js 脚本：更新 settings.json
+# -------------------------------------------
+run_node_install() {
+  local ACTION="$1"  # install or uninstall
+  shift
+
+  local TEMP_FILE=$(mktemp /tmp/dev-workflow-skills.XXXXXX.js)
+  trap "rm -f $TEMP_FILE" EXIT
+
+  if [ "$ACTION" = "uninstall" ]; then
+    cat > "$TEMP_FILE" << 'NODEEOF'
+const fs = require('fs');
+const path = require('path');
+const settingsPath = process.argv[1];
+const pluginName = process.argv[2];
+
+try {
+    if (!fs.existsSync(settingsPath)) { process.exit(0); }
+    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    const key = pluginName + '@' + pluginName;
+    let changed = false;
+    if (s.enabledPlugins && s.enabledPlugins[key]) {
+        delete s.enabledPlugins[key];
+        console.log('  ✅ 已从 enabledPlugins 移除');
+        changed = true;
+    }
+    if (s.extraKnownMarketplaces && s.extraKnownMarketplaces[pluginName]) {
+        delete s.extraKnownMarketplaces[pluginName];
+        console.log('  ✅ 已从 marketplaces 移除');
+        changed = true;
+    }
+    if (changed) {
+        fs.writeFileSync(settingsPath, JSON.stringify(s, null, 2));
+        console.log('  ✅ settings.json 已更新');
+    }
+} catch (e) {
+    console.error('  ❌ 更新失败:', e.message);
+}
+NODEEOF
+    node "$TEMP_FILE" "$SETTINGS_FILE" "$PLUGIN_NAME"
+  else
+    cat > "$TEMP_FILE" << 'NODEEOF'
+const fs = require('fs');
+const path = require('path');
+const settingsPath = process.argv[1];
+const pluginName = process.argv[2];
+const repoUrl = process.argv[3];
+
+try {
+    const dir = path.dirname(settingsPath);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    let settings = {};
+    if (fs.existsSync(settingsPath)) {
+        settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    }
+    let changed = false;
+
+    if (!settings.extraKnownMarketplaces) settings.extraKnownMarketplaces = {};
+    if (!settings.extraKnownMarketplaces[pluginName]) {
+        settings.extraKnownMarketplaces[pluginName] = {
+            source: { source: 'git', url: repoUrl }
+        };
+        console.log('  ✅ marketplace 已注册');
+        changed = true;
+    } else {
+        console.log('  ℹ️  marketplace 已存在');
+    }
+
+    if (!settings.enabledPlugins) settings.enabledPlugins = {};
+    const key = pluginName + '@' + pluginName;
+    if (!settings.enabledPlugins[key]) {
+        settings.enabledPlugins[key] = true;
+        console.log('  ✅ 插件已启用');
+        changed = true;
+    } else {
+        console.log('  ℹ️  插件已启用');
+    }
+
+    if (changed) {
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+        console.log('  ✅ settings.json 已更新');
+    } else {
+        console.log('  ℹ️  无需更新，插件已安装');
+    }
+} catch (e) {
+    console.error('  ❌ 更新失败:', e.message);
+    process.exit(1);
+}
+NODEEOF
+    node "$TEMP_FILE" "$SETTINGS_FILE" "$PLUGIN_NAME" "$REPO_URL"
+  fi
+}
 
 # -------------------------------------------
 # 解析参数
@@ -73,25 +169,10 @@ fi
 # 卸载
 # -------------------------------------------
 if [ "$UNINSTALL" = true ]; then
-  echo "📦 卸载 Dev Skills..."
+  echo "📦 卸载 Dev Workflow Skills..."
 
-  if [ -f "$SETTINGS_FILE" ]; then
-    if command -v node &> /dev/null; then
-      node -e "
-        const fs = require('fs');
-        const s = JSON.parse(fs.readFileSync('$SETTINGS_FILE', 'utf8'));
-        const key = '$PLUGIN_NAME@$PLUGIN_NAME';
-        if (s.enabledPlugins && s.enabledPlugins[key]) {
-          delete s.enabledPlugins[key];
-          console.log('  ✅ 已从 enabledPlugins 移除');
-        }
-        if (s.extraKnownMarketplaces && s.extraKnownMarketplaces['$PLUGIN_NAME']) {
-          delete s.extraKnownMarketplaces['$PLUGIN_NAME'];
-          console.log('  ✅ 已从 marketplaces 移除');
-        }
-        fs.writeFileSync('$SETTINGS_FILE', JSON.stringify(s, null, 2));
-      "
-    fi
+  if command -v node &> /dev/null; then
+    run_node_install uninstall
   fi
 
   # 清理缓存
@@ -113,64 +194,21 @@ install_claude() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "  仓库: $REPO_URL"
 
-  # 检查 settings.json 是否存在
-  if [ ! -f "$SETTINGS_FILE" ]; then
-    echo "  ⚠️  未找到 $SETTINGS_FILE"
-    echo "  请先启动一次 Claude Code 以生成配置文件"
-    return 1
-  fi
-
-  # 使用 node 更新 settings.json
   if ! command -v node &> /dev/null; then
     echo "  ❌ 需要 Node.js 来更新配置文件"
     echo "  请手动编辑 ~/.claude/settings.json："
     echo ""
     echo '  1. 在 enabledPlugins 中添加:'
-    echo '     "'$PLUGIN_NAME'@'$PLUGIN_NAME'": true'
+    echo "     \"$PLUGIN_NAME@$PLUGIN_NAME\": true"
     echo ""
     echo '  2. 在 extraKnownMarketplaces 中添加:'
-    echo '     "'$PLUGIN_NAME'": {'
-    echo '       "source": { "source": "git", "url": "'$REPO_URL'" }'
-    echo '     }'
+    echo "     \"$PLUGIN_NAME\": {"
+    echo "       \"source\": { \"source\": \"git\", \"url\": \"$REPO_URL\" }"
+    echo "     }"
     return 1
   fi
 
-  node -e "
-    const fs = require('fs');
-    const settingsPath = '$SETTINGS_FILE';
-    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    let changed = false;
-
-    // 1. 注册 marketplace
-    if (!settings.extraKnownMarketplaces) settings.extraKnownMarketplaces = {};
-    if (!settings.extraKnownMarketplaces['$PLUGIN_NAME']) {
-      settings.extraKnownMarketplaces['$PLUGIN_NAME'] = {
-        source: { source: 'git', url: '$REPO_URL' }
-      };
-      console.log('  ✅ 已注册 marketplace');
-      changed = true;
-    } else {
-      console.log('  ℹ️  marketplace 已存在');
-    }
-
-    // 2. 启用插件
-    if (!settings.enabledPlugins) settings.enabledPlugins = {};
-    const key = '$PLUGIN_NAME@$PLUGIN_NAME';
-    if (!settings.enabledPlugins[key]) {
-      settings.enabledPlugins[key] = true;
-      console.log('  ✅ 已启用插件');
-      changed = true;
-    } else {
-      console.log('  ℹ️  插件已启用');
-    }
-
-    if (changed) {
-      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-      console.log('  ✅ settings.json 已更新');
-    } else {
-      console.log('  ℹ️  无需更新，插件已安装');
-    }
-  "
+  run_node_install install
 
   echo ""
   echo "  🎉 Claude Code 安装完成！"

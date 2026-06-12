@@ -27,7 +27,19 @@
 
 ## 快速安装
 
-### Claude Code（一键安装）
+### Windows（PowerShell）
+
+```powershell
+irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.ps1 | iex
+```
+
+### Windows（CMD）
+
+```cmd
+powershell -Command "irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.ps1 | iex"
+```
+
+### macOS / Linux
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash
@@ -37,27 +49,42 @@ curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/insta
 
 ### 同时安装到 Claude Code + Codex
 
+```powershell
+# PowerShell
+irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.ps1 -OutFile install.ps1
+.\install.ps1 -Codex -Project "C:\my-app"
+```
+
 ```bash
+# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash -s -- --codex --project /path/to/your/project
 ```
 
 这会在目标项目中生成 `AGENTS.md`，Codex 自动读取。
 
-### 仅安装 Codex
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash -s -- --codex --project /path/to/your/project
-```
-
 ### 使用内部 GitLab
 
+```powershell
+# PowerShell
+irm ... -OutFile install.ps1
+.\install.ps1 -Repo "https://gitlab.example.com/skills/dev-workflow-skills.git"
+```
+
 ```bash
+# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash -s -- --repo https://gitlab.example.com/skills/dev-workflow-skills.git
 ```
 
 ### 卸载
 
+```powershell
+# PowerShell
+irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.ps1 -OutFile install.ps1
+.\install.ps1 -Uninstall
+```
+
 ```bash
+# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/main/install.sh | bash -s -- --uninstall
 ```
 
@@ -138,7 +165,8 @@ dev-workflow-skills/
 │       └── SKILL.md
 ├── codex/
 │   └── AGENTS.md                # Codex 集成文件
-└── install.sh                   # 一键安装脚本
+├── install.sh                   # 一键安装脚本（macOS/Linux）
+└── install.ps1                  # 一键安装脚本（Windows）
 ```
 
 ## 核心原则
