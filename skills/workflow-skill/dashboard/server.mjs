@@ -223,10 +223,10 @@ app.get('/artifacts/*', (req, res) => {
   res.setHeader('Content-Type', mime);
 
   if (ext === '.md') {
-    // Serve markdown as HTML with rendered content
+    // Serve markdown as raw text for client-side rendering
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     try {
-      const content = readFileSync(filePath, 'utf-8');
-      res.send(renderMarkdownAsHtml(content, reqPath));
+      res.sendFile(filePath);
     } catch {
       res.status(500).send('Error reading file');
     }
@@ -237,34 +237,6 @@ app.get('/artifacts/*', (req, res) => {
     res.sendFile(filePath);
   }
 });
-
-// Minimal markdown-to-HTML renderer for artifact preview
-function renderMarkdownAsHtml(md, filename) {
-  let html = md
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/^\- (.+)$/gm, '<li>$1</li>')
-    .replace(/^\|(.+)\|$/gm, (match) => {
-      const cells = match.split('|').filter(c => c.trim());
-      const tag = cells.every(c => /^[\s-:]+$/.test(c)) ? '' : '<tr>' + cells.map(c => `<td>${c.trim()}</td>`).join('') + '</tr>';
-      return tag;
-    })
-    .replace(/\n{2,}/g, '</p><p>')
-    .replace(/\n/g, '<br>');
-
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${filename}</title>
-<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;line-height:1.6;color:#1a1a2e}
-h1,h2,h3{color:#16213e}code{background:#e8eaf6;padding:2px 6px;border-radius:3px;font-size:0.9em}
-table{border-collapse:collapse;width:100%;margin:1rem 0}td,th{border:1px solid #ddd;padding:8px 12px;text-align:left}
-tr:nth-child(even){background:#f8f9fa}li{margin:4px 0}</style>
-</head><body><p>${html}</p></body></html>`;
-}
 
 // ── Server startup ──────────────────────────────────
 function startServer(port) {

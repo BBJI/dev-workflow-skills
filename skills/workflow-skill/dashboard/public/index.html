@@ -175,12 +175,69 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .modal-overlay.open{display:flex}
 .modal{background:var(--c-surface);border-radius:var(--radius);width:100%;max-width:1000px;height:80vh;display:flex;flex-direction:column;box-shadow:var(--shadow)}
 .modal-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--c-border)}
-.modal-header h3{font-size:14px}
+.modal-header h3{font-size:14px;display:flex;align-items:center;gap:8px}
 .modal-close{background:none;border:none;color:var(--c-text2);font-size:20px;cursor:pointer;padding:4px 8px}
 .modal-close:hover{color:var(--c-text)}
-.modal-body{flex:1;overflow:hidden}
+.modal-header-actions{display:flex;align-items:center;gap:4px}
+.modal-btn{background:none;border:none;color:var(--c-text2);cursor:pointer;padding:4px 8px;border-radius:4px;font-size:16px;line-height:1;transition:all .15s}
+.modal-btn:hover{color:var(--c-text);background:rgba(255,255,255,.06)}
+.modal-btn svg{width:16px;height:16px;fill:currentColor;vertical-align:middle}
+.modal-overlay.fullscreen .modal{max-width:100%;height:100%;border-radius:0}
+.modal-overlay.fullscreen{padding:0;background:rgba(0,0,0,.85)}
+.modal-body{flex:1;overflow:hidden;background:#fff}
 .modal-body iframe{width:100%;height:100%;border:none;background:#fff}
-.modal-body .md-content{padding:24px;overflow-y:auto;height:100%;background:#fff;color:#1a1a2e}
+.type-badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.5px}
+.type-badge.html{background:rgba(79,140,255,.15);color:var(--c-primary)}
+.type-badge.markdown{background:rgba(52,211,153,.15);color:var(--c-success)}
+.type-badge.json{background:rgba(251,191,36,.15);color:var(--c-warning)}
+.type-badge.other{background:rgba(136,136,168,.15);color:var(--c-text2)}
+.modal-loading{display:flex;align-items:center;justify-content:center;height:100%;color:var(--c-text2);font-size:14px}
+.modal-loading .spinner{width:32px;height:32px;border:3px solid var(--c-border);border-top-color:var(--c-primary);border-radius:50%;animation:spin 1s linear infinite;margin-right:12px}
+.modal-error{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--c-danger);font-size:14px;gap:8px}
+.modal-error button{padding:6px 16px;border-radius:6px;border:1px solid var(--c-border);background:var(--c-surface2);color:var(--c-text);cursor:pointer;font-size:13px}
+.modal-error button:hover{border-color:var(--c-primary)}
+
+/* Markdown rendered content */
+.md-content{padding:32px;overflow-y:auto;height:100%;color:#1a1a2e;font-size:15px;line-height:1.7}
+.md-content h1{font-size:2em;font-weight:600;border-bottom:1px solid #d0d7de;padding-bottom:.3em;margin:0 0 16px}
+.md-content h2{font-size:1.5em;font-weight:600;border-bottom:1px solid #d0d7de;padding-bottom:.3em;margin:24px 0 12px}
+.md-content h3{font-size:1.25em;font-weight:600;margin:16px 0 8px}
+.md-content h4{font-size:1em;font-weight:600;margin:16px 0 8px}
+.md-content p{margin:8px 0}
+.md-content a{color:#0969da;text-decoration:none}
+.md-content a:hover{text-decoration:underline}
+.md-content code{background:#eff1f3;padding:2px 6px;border-radius:3px;font-size:.875em;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace}
+.md-content pre{background:#1b1f24;color:#e6edf3;padding:16px;border-radius:6px;overflow-x:auto;margin:12px 0}
+.md-content pre code{background:none;padding:0;color:inherit;font-size:.875em}
+.md-content table{border-collapse:collapse;width:100%;margin:12px 0}
+.md-content th,.md-content td{border:1px solid #d0d7de;padding:8px 12px;text-align:left}
+.md-content th{background:#f6f8fa;font-weight:600}
+.md-content blockquote{border-left:4px solid #d0d7de;color:#656d76;padding:0 1em;margin:8px 0}
+.md-content ul,.md-content ol{padding-left:2em;margin:8px 0}
+.md-content li{margin:4px 0}
+.md-content .task-list-item{list-style:none;margin-left:-1.2em}
+.md-content del{color:#656d76;text-decoration:line-through}
+.md-content hr{border:none;border-top:1px solid #d0d7de;margin:24px 0}
+.md-content img{max-width:100%}
+
+/* JSON tree rendered content */
+.json-content{padding:20px;overflow-y:auto;height:100%;color:#1a1a2e;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:13px;line-height:1.8}
+.json-key{color:#0a3069;font-weight:600}
+.json-string{color:#0a3069}
+.json-number{color:#0550ae}
+.json-bool{color:#cf222e}
+.json-null{color:#6e7781;font-style:italic}
+.json-bracket{color:#656d76}
+.json-toggle{cursor:pointer;user-select:none;display:inline-block;width:16px;text-align:center;color:#656d76;font-size:11px;transition:color .15s}
+.json-toggle:hover{color:#0969da}
+.json-count{color:#656d76;font-size:11px;margin-left:4px}
+.json-children{margin-left:20px}
+.json-children.collapsed{display:none}
+.json-row{white-space:nowrap}
+.json-row:hover{background:rgba(9,105,218,.04);border-radius:3px}
+
+/* Plain text content */
+.plain-content{padding:20px;overflow-y:auto;height:100%;background:#fff;color:#1a1a2e;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
 
 /* Empty state */
 .empty-state{text-align:center;padding:60px 24px;color:var(--c-text2)}
@@ -195,6 +252,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   .panel-main{border-right:none}
 }
 </style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/highlight.min.js"></script>
 </head>
 <body>
 
@@ -230,7 +290,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="modal">
     <div class="modal-header">
       <h3 id="modalTitle">Artifact Preview</h3>
-      <button class="modal-close" id="modalClose">&times;</button>
+      <div class="modal-header-actions">
+        <button class="modal-btn" id="modalFullscreen" title="全屏查看">
+          <svg viewBox="0 0 16 16"><path d="M1 1h5v1.5H2.5V6H1V1zm9 0h5v5h-1.5V2.5H10V1zM1 10h1.5v3.5H6V15H1v-5zm12.5 3.5V10H15v5h-5v-1.5h3.5z"/></svg>
+        </button>
+        <button class="modal-btn" id="modalFullscreenExit" title="退出全屏" style="display:none">
+          <svg viewBox="0 0 16 16"><path d="M5.5 1v3.5H2V6h5V1H5.5zm5 0v3.5h3.5V6H10V1h-.5zM2 10v1.5h3.5V15H6v-5H2zm9.5 1.5V15H10v-1h.5V10H15v1.5h-3.5z"/></svg>
+        </button>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
     </div>
     <div class="modal-body" id="modalBody"></div>
   </div>
@@ -660,23 +728,198 @@ function openArtifact(path, type, name) {
   const body = document.getElementById('modalBody');
   const title = document.getElementById('modalTitle');
 
-  title.textContent = name;
+  // Build title with type badge
+  const badgeClass = type === 'html' ? 'html' : type === 'markdown' ? 'markdown' : type === 'json' ? 'json' : 'other';
+  const badgeText = type === 'html' ? 'HTML' : type === 'markdown' ? 'MD' : type === 'json' ? 'JSON' : type.toUpperCase();
+  title.innerHTML = `${escHtml(name)} <span class="type-badge ${badgeClass}">${badgeText}</span>`;
+
+  // Show loading state
+  body.innerHTML = '<div class="modal-loading"><div class="spinner"></div>加载中...</div>';
+  overlay.classList.add('open');
 
   if (type === 'html') {
     body.innerHTML = `<iframe src="/artifacts/${encodeURIComponent(path)}"></iframe>`;
   } else if (type === 'markdown') {
-    body.innerHTML = `<div class="md-content"><iframe src="/artifacts/${encodeURIComponent(path)}" style="width:100%;height:100%;border:none"></iframe></div>`;
+    fetch(`/artifacts/${encodeURIComponent(path)}`)
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.text(); })
+      .then(text => renderMarkdownContent(text, body))
+      .catch(err => renderError(body, err.message, path, type, name));
+  } else if (type === 'json') {
+    fetch(`/artifacts/${encodeURIComponent(path)}`)
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.text(); })
+      .then(text => {
+        try {
+          const data = JSON.parse(text);
+          renderJsonTree(data, body, 0);
+        } catch {
+            // Fallback to plain text if JSON parsing fails
+          const container = document.createElement('div');
+          container.className = 'plain-content';
+          container.textContent = text;
+          body.innerHTML = '';
+          body.appendChild(container);
+        }
+      })
+      .catch(err => renderError(body, err.message, path, type, name));
   } else {
-    window.open(`/artifacts/${encodeURIComponent(path)}`, '_blank');
-    return;
+    fetch(`/artifacts/${encodeURIComponent(path)}`)
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.text(); })
+      .then(text => {
+        const container = document.createElement('div');
+        container.className = 'plain-content';
+        container.textContent = text;
+        body.innerHTML = '';
+        body.appendChild(container);
+      })
+      .catch(err => renderError(body, err.message, path, type, name));
+  }
+}
+
+function renderMarkdownContent(text, container) {
+  // Configure marked with GFM and highlight.js
+  marked.setOptions({
+    gfm: true,
+    breaks: false,
+    highlight: function(code, lang) {
+      if (lang && hljs.getLanguage(lang)) {
+        try { return hljs.highlight(code, { language: lang }).value; } catch {}
+      }
+      try { return hljs.highlightAuto(code).value; } catch {}
+      return code;
+    }
+  });
+
+  const div = document.createElement('div');
+  div.className = 'md-content';
+  div.innerHTML = marked.parse(text);
+  container.innerHTML = '';
+  container.appendChild(div);
+}
+
+function renderJsonTree(data, container, depth) {
+  const div = document.createElement('div');
+  div.className = 'json-content';
+  div.appendChild(buildJsonNode(data, depth));
+  container.innerHTML = '';
+  container.appendChild(div);
+}
+
+function buildJsonNode(value, depth, key) {
+  const fragment = document.createDocumentFragment();
+
+  if (value === null) {
+    const row = createJsonRow(key, '<span class="json-null">null</span>');
+    fragment.appendChild(row);
+  } else if (typeof value === 'boolean') {
+    const row = createJsonRow(key, `<span class="json-bool">${value}</span>`);
+    fragment.appendChild(row);
+  } else if (typeof value === 'number') {
+    const row = createJsonRow(key, `<span class="json-number">${value}</span>`);
+    fragment.appendChild(row);
+  } else if (typeof value === 'string') {
+    const row = createJsonRow(key, `<span class="json-string">"${escHtml(value)}"</span>`);
+    fragment.appendChild(row);
+  } else if (Array.isArray(value)) {
+    fragment.appendChild(buildJsonCollapsible(key, value, depth, '[', ']', value.length + ' items'));
+  } else if (typeof value === 'object') {
+    const keys = Object.keys(value);
+    fragment.appendChild(buildJsonCollapsible(key, value, depth, '{', '}', keys.length + ' keys'));
   }
 
-  overlay.classList.add('open');
+  return fragment;
+}
+
+function createJsonRow(key, valueHtml) {
+  const row = document.createElement('div');
+  row.className = 'json-row';
+  let html = '<span class="json-toggle" style="visibility:hidden">&nbsp;</span>';
+  if (key !== undefined) {
+    const keyStr = typeof key === 'number' ? `<span class="json-number">${key}</span>` : `<span class="json-key">"${escHtml(String(key))}"</span>`;
+    html += keyStr + ': ';
+  }
+  html += valueHtml;
+  row.innerHTML = html;
+  return row;
+}
+
+function buildJsonCollapsible(key, value, depth, openBracket, closeBracket, countText) {
+  const wrapper = document.createElement('span');
+
+  // Header row with toggle
+  const headerRow = document.createElement('div');
+  headerRow.className = 'json-row';
+  const isExpanded = depth < 2;
+  const toggleChar = isExpanded ? '▼' : '▶';
+  let headerHtml = `<span class="json-toggle">${toggleChar}</span>`;
+  if (key !== undefined) {
+    const keyStr = typeof key === 'number' ? `<span class="json-number">${key}</span>` : `<span class="json-key">"${escHtml(String(key))}"</span>`;
+    headerHtml += keyStr + ': ';
+  }
+  headerHtml += `<span class="json-bracket">${openBracket}</span>`;
+  headerHtml += `<span class="json-count" ${isExpanded ? 'style="display:none"' : ''}>${countText}</span>`;
+  headerRow.innerHTML = headerHtml;
+  wrapper.appendChild(headerRow);
+
+  // Children container
+  const childrenDiv = document.createElement('div');
+  childrenDiv.className = 'json-children' + (isExpanded ? '' : ' collapsed');
+
+  if (Array.isArray(value)) {
+    value.forEach((item, i) => {
+      childrenDiv.appendChild(buildJsonNode(item, depth + 1, i));
+      // Add comma
+      if (i < value.length - 1) {
+        const comma = document.createElement('span');
+        comma.textContent = ',';
+        childrenDiv.lastChild.querySelector('.json-row:last-child, .json-row')?.appendChild(comma);
+      }
+    });
+  } else {
+    const keys = Object.keys(value);
+    keys.forEach((k, i) => {
+      childrenDiv.appendChild(buildJsonNode(value[k], depth + 1, k));
+      if (i < keys.length - 1) {
+        const lastRow = childrenDiv.lastElementChild;
+        if (lastRow) {
+          const commaSpan = document.createElement('span');
+          commaSpan.textContent = ',';
+          lastRow.appendChild(commaSpan);
+        }
+      }
+    });
+  }
+  wrapper.appendChild(childrenDiv);
+
+  // Closing bracket
+  const closeRow = document.createElement('div');
+  closeRow.className = 'json-row';
+  closeRow.innerHTML = `<span class="json-toggle" style="visibility:hidden">&nbsp;</span><span class="json-bracket">${closeBracket}</span>`;
+  wrapper.appendChild(closeRow);
+
+  // Toggle click handler
+  const toggle = headerRow.querySelector('.json-toggle');
+  const countEl = headerRow.querySelector('.json-count');
+  toggle.addEventListener('click', () => {
+    const isCollapsed = childrenDiv.classList.contains('collapsed');
+    childrenDiv.classList.toggle('collapsed');
+    toggle.textContent = isCollapsed ? '▼' : '▶';
+    if (countEl) countEl.style.display = isCollapsed ? 'none' : '';
+  });
+
+  return wrapper;
+}
+
+function renderError(container, message, path, type, name) {
+  container.innerHTML = `<div class="modal-error"><div>加载失败: ${escHtml(message)}</div><button onclick="openArtifact('${escAttr(path)}','${escAttr(type)}','${escAttr(name)}')">重试</button></div>`;
 }
 
 document.getElementById('modalClose').onclick = () => {
   document.getElementById('modalOverlay').classList.remove('open');
+  document.getElementById('modalOverlay').classList.remove('fullscreen');
   document.getElementById('modalBody').innerHTML = '';
+  updateFullscreenButtons(false);
+  // Exit browser fullscreen if active
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 };
 
 document.getElementById('modalOverlay').onclick = (e) => {
@@ -684,6 +927,45 @@ document.getElementById('modalOverlay').onclick = (e) => {
     document.getElementById('modalClose').click();
   }
 };
+
+// Fullscreen toggle
+function updateFullscreenButtons(isFullscreen) {
+  document.getElementById('modalFullscreen').style.display = isFullscreen ? 'none' : '';
+  document.getElementById('modalFullscreenExit').style.display = isFullscreen ? '' : 'none';
+}
+
+function toggleModalFullscreen() {
+  const overlay = document.getElementById('modalOverlay');
+  const isFullscreen = overlay.classList.toggle('fullscreen');
+  updateFullscreenButtons(isFullscreen);
+  // Also use browser Fullscreen API for true fullscreen
+  if (isFullscreen) {
+    overlay.requestFullscreen?.().catch(() => {});
+  } else if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+
+document.getElementById('modalFullscreen').onclick = toggleModalFullscreen;
+document.getElementById('modalFullscreenExit').onclick = toggleModalFullscreen;
+
+document.addEventListener('fullscreenchange', () => {
+  const overlay = document.getElementById('modalOverlay');
+  if (!document.fullscreenElement && overlay.classList.contains('fullscreen')) {
+    overlay.classList.remove('fullscreen');
+    updateFullscreenButtons(false);
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('modalOverlay').classList.contains('open')) {
+    // If in CSS fullscreen (but not browser fullscreen), close modal directly
+    // Browser fullscreen: ESC exits fullscreen first, don't close modal simultaneously
+    if (!document.fullscreenElement) {
+      document.getElementById('modalClose').click();
+    }
+  }
+});
 
 // ── Helpers ─────────────────────────────────────────
 function statusLabel(s) {

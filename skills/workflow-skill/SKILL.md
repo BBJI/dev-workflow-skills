@@ -523,7 +523,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 2. 设置 `completedAt` 为当前时间
 3. 追加活动日志：`{ timestamp, phase: currentPhase, action: "workflow-completed", message: "工作流完成", level: "success" }`
 4. 写回文件
-5. **询问用户**是否关闭仪表盘。如果用户选择保留，仪表盘继续运行供回顾。如果选择关闭，运行 `kill $(cat .dws/{项目名}/.dashboard.pid)`（macOS/Linux）或停止对应进程（Windows）。
+5. **主动关闭仪表盘**。工作流完成后自动终止 Dashboard 服务器进程，释放端口和资源。执行方式：运行 `kill $(cat .dws/{项目名}/.dashboard.pid)`（macOS/Linux）或停止对应进程（Windows）。关闭后追加活动日志：`{ timestamp, phase: currentPhase, action: "dashboard-stopped", message: "Dashboard 已关闭", level: "info" }`。
 
 ### 活动日志管理
 
