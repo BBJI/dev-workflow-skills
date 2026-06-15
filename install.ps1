@@ -237,13 +237,18 @@ if ($Claude) {
             } else {
                 Write-Host "  marketplace 目录损坏，重新克隆..." -ForegroundColor Yellow
                 Remove-Item $marketDir -Recurse -Force -ErrorAction SilentlyContinue
-                $cloneOutput = git clone --depth 1 $REPO_URL $marketDir 2>&1
-                Write-Host $cloneOutput
+                & git clone --depth 1 $REPO_URL $marketDir 2>&1 | Write-Host
             }
         } else {
             Write-Host "  克隆仓库到 marketplace..." -ForegroundColor Gray
-            $cloneOutput = git clone --depth 1 $REPO_URL $marketDir 2>&1
-            Write-Host $cloneOutput
+            & git clone --depth 1 $REPO_URL $marketDir 2>&1 | Write-Host
+        }
+
+        # 等待目录出现（git clone 可能在后台执行）
+        $waitCount = 0
+        while (-not (Test-Path $marketDir) -and $waitCount -lt 30) {
+            Start-Sleep -Milliseconds 500
+            $waitCount++
         }
 
         if (-not (Test-Path $marketDir)) {
@@ -278,16 +283,12 @@ if ($Claude) {
         if ((Test-Path $dashboardDir) -and (Test-Path (Join-Path $dashboardDir "package.json"))) {
             Write-Host "  Installing dashboard dependencies..." -ForegroundColor Gray
             Push-Location $dashboardDir
-            try {
-                & npm install --production 2>$null
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Host "  [OK] Dashboard dependencies installed" -ForegroundColor Green
-                } else {
-                    Write-Host "  [WARN] Dashboard dependencies installation failed" -ForegroundColor Yellow
-                    Write-Host "         You can install manually: cd $dashboardDir && npm install" -ForegroundColor Yellow
-                }
-            } catch {
+            & npm install --production 2>&1 | Write-Host
+            if (Test-Path (Join-Path $dashboardDir "node_modules")) {
+                Write-Host "  [OK] Dashboard dependencies installed" -ForegroundColor Green
+            } else {
                 Write-Host "  [WARN] Dashboard dependencies installation failed" -ForegroundColor Yellow
+                Write-Host "         You can install manually: cd $dashboardDir && npm install" -ForegroundColor Yellow
             }
             Pop-Location
         }
