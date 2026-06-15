@@ -2,8 +2,8 @@
 name: req-analysis-skill
 description: >
   需求调研分析技能，用于软件工程中的需求获取、分析和文档化。从用户输入中提炼结构化需求，
-  输出需求文档、追溯矩阵和风险登记表。当用户提到以下任何场景时务必使用此技能：需求分析、
-  需求调研、需求梳理、需求文档、PRD编写、功能需求、非功能需求、干系人分析、需求分解，
+  输出需求文档、需求原型图（HTML）、追溯矩阵和风险登记表。当用户提到以下任何场景时务必使用此技能：
+  需求分析、需求调研、需求梳理、需求文档、PRD编写、功能需求、非功能需求、干系人分析、需求分解，
   或任何需要将模糊想法或功能请求转化为严谨结构化需求文档的场景。即使用户没有明确提到
   "需求"，只要他们想在实际开发之前先明确系统该做什么，就应触发此技能。
 ---
@@ -180,6 +180,90 @@ description: >
 |---|------|--------|------|---------|
 | 1 | ... | 高/中/低 | 高/中/低 | ... |
 ```
+
+#### 产物四：需求原型图（HTML）
+
+将需求可视化为可交互的低保真原型，帮助干系人直观理解系统应该做什么。每个核心页面/场景生成一个独立的 HTML 文件。
+
+**输出格式**：每个页面/场景一个 HTML 文件，使用纯 HTML + 内联 CSS 实现，无外部依赖。
+
+**原型设计原则**：
+- **低保真**：使用灰度色系（#F5F5F5 背景、#333 文本、#DDD 边框），聚焦结构和功能而非视觉细节
+- **可点击导航**：页面之间通过超链接连通，模拟真实用户流程
+- **标注需求映射**：每个功能区块标注对应的 FR-xxx / NFR-xxx 编号
+- **状态示意**：展示关键状态变体（空状态、错误状态、加载状态）的占位表示
+- **响应式暗示**：使用 max-width 容器，体现桌面端和移动端的基本布局差异
+
+**文件命名**：`prototype-{页面名称}.html`，如 `prototype-login.html`、`prototype-dashboard.html`
+
+**HTML 模板结构**：
+
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[项目名称] — [页面名称] 原型</title>
+  <style>
+    /* 低保真原型样式 */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, sans-serif; background: #F5F5F5; color: #333; }
+    .prototype-header { background: #DDD; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .prototype-header h1 { font-size: 16px; font-weight: 600; }
+    .prototype-nav a { margin-left: 16px; color: #666; text-decoration: none; font-size: 14px; }
+    .prototype-nav a:hover { color: #333; text-decoration: underline; }
+    .req-tag { display: inline-block; background: #E8E8E8; border: 1px solid #CCC; border-radius: 3px; padding: 1px 6px; font-size: 11px; color: #666; margin: 2px; }
+    .placeholder { border: 2px dashed #CCC; background: #FAFAFA; padding: 24px; text-align: center; color: #999; font-size: 13px; }
+    .layout { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .layout-mobile { max-width: 375px; }
+    /* 按需扩展 */
+  </style>
+</head>
+<body>
+  <header class="prototype-header">
+    <h1>[项目名称] — [页面名称]</h1>
+    <nav class="prototype-nav">
+      <!-- 导航到其他原型页面 -->
+      <a href="prototype-login.html">登录</a>
+      <a href="prototype-dashboard.html">仪表盘</a>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <!-- 功能区块：每个区块标注需求映射 -->
+    <section>
+      <h2>[区块名称] <span class="req-tag">FR-001</span></h2>
+      <div class="placeholder">
+        [功能描述占位 — 具体视觉细节在设计阶段定义]
+      </div>
+    </section>
+
+    <!-- 状态变体 -->
+    <section>
+      <h2>[区块名称] — 空状态 <span class="req-tag">FR-002</span></h2>
+      <div class="placeholder">暂无数据</div>
+    </section>
+
+    <section>
+      <h2>[区块名称] — 错误状态 <span class="req-tag">FR-002</span></h2>
+      <div class="placeholder" style="border-color: #E57373;">加载失败，请重试</div>
+    </section>
+  </main>
+</body>
+</html>
+```
+
+**必须覆盖的原型页面**：
+- 每个用户角色的核心操作页面
+- 每条 Must 优先级功能需求 (FR-xxx) 对应的页面或区块
+- 关键用户流程中的中间状态和结果页面
+- 错误/空/加载等异常状态的示意
+
+**不需要覆盖**：
+- Could / Won't 优先级的需求
+- 纯视觉细节（颜色、字体、图标选择）
+- 重复性高的列表/详情变体（用一个示例即可）
 
 ---
 

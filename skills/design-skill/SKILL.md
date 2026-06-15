@@ -1,8 +1,9 @@
 ---
 name: design-skill
 description: >
-  UI/UX设计技能，将结构化需求文档转化为完整的设计规范。产出设计令牌、组件规格、用户流程、
-  页面布局和交互模式，开发者可直接据此实现。当用户提到以下任何场景时务必使用此技能：
+  UI/UX设计技能，将结构化需求文档和需求原型图转化为完整的设计规范和设计稿。产出设计令牌、
+  组件规格、用户流程、页面布局、交互模式、高保真设计稿（HTML）和交互说明（HTML），
+  开发者可直接据此实现。当用户提到以下任何场景时务必使用此技能：
   UI设计、UX设计、界面设计、设计系统、设计规范、线框图、用户流程、信息架构、交互设计、
   组件设计、设计令牌，或需要将需求转化为视觉/交互蓝图。即使用户只说了"设计"二字，
   只要是在软件功能的上下文中，都应触发此技能。
@@ -14,13 +15,14 @@ description: >
 
 ## 输入
 
-此技能期望结构化需求文档作为输入（通常是 req-analysis-skill 的输出）。至少需要：
+此技能期望结构化需求文档和需求原型图作为输入（通常是 req-analysis-skill 的输出）。至少需要：
 - 功能需求（FR-xxx）描述系统做什么
 - 非功能需求（NFR-xxx）描述性能、无障碍和约束
 - 用户角色及其主要任务
+- 需求原型图（HTML）— 低保真页面结构和交互流程
 - 现有品牌指南或设计约束（如有）
 
-如果用户尚未产出需求文档，建议先使用 req-analysis-skill，或要求提供非正式需求。仍可继续，但需标记决策可能需要重新验证。
+如果用户尚未产出需求文档和原型图，建议先使用 req-analysis-skill，或要求提供非正式需求。仍可继续，但需标记决策可能需要重新验证。
 
 ## 流程
 
@@ -298,7 +300,7 @@ flowchart TD
 
 ## 输出产物
 
-产出以下四份文档：
+产出以下六份文档：
 
 ### 产物一：设计规范
 
@@ -353,6 +355,241 @@ flowchart TD
 ```
 
 此日志对可追溯性至关重要，也为后续设计师理解决策原因提供依据。
+
+### 产物五：高保真设计稿（HTML）
+
+将需求原型图升级为高保真设计稿，使用完整的视觉令牌和组件规格渲染每个页面。每个页面生成一个独立的 HTML 文件，开发者可直接参照实现。
+
+**输出格式**：每个页面/屏幕一个 HTML 文件，使用纯 HTML + 内联 CSS 实现，无外部依赖。
+
+**设计稿设计原则**：
+- **高保真**：使用步骤四定义的完整设计令牌（颜色、排版、间距、阴影、圆角）
+- **像素级精确**：严格按照设计令牌值设置所有 CSS 属性，不使用近似值
+- **组件完整**：每个组件展示所有必要状态（默认、悬停、聚焦、禁用、错误等）
+- **状态全覆盖**：每个页面展示所有状态变体（正常、加载中、空状态、错误）
+- **响应式展示**：每个页面至少展示桌面端（1280px）布局，关键页面同时展示移动端（375px）布局
+- **需求追溯**：每个功能区块标注对应的 FR-xxx / NFR-xxx 编号（以注释形式）
+- **可点击导航**：页面之间通过超链接连通
+
+**文件命名**：`design-{页面名称}.html`，如 `design-login.html`、`design-dashboard.html`
+
+**HTML 模板结构**：
+
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[项目名称] — [页面名称] 设计稿</title>
+  <style>
+    /* ========== 设计令牌 ========== */
+    :root {
+      --color-primary: #2563EB;
+      --color-primary-hover: #1D4ED8;
+      --color-primary-pressed: #1E40AF;
+      --color-secondary: #64748B;
+      --color-surface: #FFFFFF;
+      --color-surface-dark: #0F172A;
+      --color-text-primary: #0F172A;
+      --color-text-secondary: #475569;
+      --color-border: #E2E8F0;
+      --color-error: #DC2626;
+      --color-success: #16A34A;
+      --color-warning: #CA8A04;
+      --color-info: #2563EB;
+      --text-h1: 700 30px/1.3 sans-serif;
+      --text-h2: 600 24px/1.3 sans-serif;
+      --text-h3: 600 20px/1.4 sans-serif;
+      --text-body: 400 16px/1.5 sans-serif;
+      --text-body-sm: 400 14px/1.5 sans-serif;
+      --text-caption: 400 12px/1.4 sans-serif;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 24px;
+      --space-6: 32px;
+      --space-8: 48px;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+      --shadow-md: 0 4px 6px rgba(0,0,0,0.07);
+      --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+    }
+
+    /* ========== 基础重置 ========== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font: var(--text-body); background: #F8FAFC; color: var(--color-text-primary); }
+
+    /* ========== 设计稿导航栏 ========== */
+    .design-header { background: var(--color-surface); border-bottom: 1px solid var(--color-border); padding: var(--space-3) var(--space-6); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: var(--shadow-sm); }
+    .design-header h1 { font: var(--text-h3); }
+    .design-nav { display: flex; gap: var(--space-4); }
+    .design-nav a { font: var(--text-body-sm); color: var(--color-secondary); text-decoration: none; }
+    .design-nav a:hover { color: var(--color-primary); }
+
+    /* ========== 状态标签 ========== */
+    .state-label { display: inline-block; background: #F0F9FF; border: 1px solid #BAE6FD; border-radius: var(--radius-sm); padding: 2px 8px; font: var(--text-caption); color: #0369A1; margin-bottom: var(--space-3); }
+    .state-label.error { background: #FEF2F2; border-color: #FECACA; color: #B91C1C; }
+    .state-label.empty { background: #F8FAFC; border-color: #E2E8F0; color: #64748B; }
+    .state-label.loading { background: #FFFBEB; border-color: #FDE68A; color: #92400E; }
+
+    /* ========== 按需扩展组件样式 ========== */
+    /* 根据步骤五的组件规格逐一定义 */
+  </style>
+</head>
+<body>
+  <header class="design-header">
+    <h1>[项目名称] — [页面名称]</h1>
+    <nav class="design-nav">
+      <!-- 导航到其他设计稿页面 -->
+      <a href="design-login.html">登录</a>
+      <a href="design-dashboard.html">仪表盘</a>
+    </nav>
+  </header>
+
+  <main style="max-width: 1280px; margin: 0 auto; padding: var(--space-6);">
+    <!-- 正常状态 -->
+    <div class="state-label">正常状态</div>
+    <section style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-5); box-shadow: var(--shadow-sm);">
+      <!-- FR-001: 功能区块 -->
+    </section>
+
+    <!-- 加载状态 -->
+    <div class="state-label loading">加载中</div>
+    <section style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-5); box-shadow: var(--shadow-sm);">
+      <!-- 骨架屏 -->
+    </section>
+
+    <!-- 空状态 -->
+    <div class="state-label empty">空状态</div>
+    <section style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-5); box-shadow: var(--shadow-sm);">
+      <!-- 空状态插图 + 引导 -->
+    </section>
+
+    <!-- 错误状态 -->
+    <div class="state-label error">错误状态</div>
+    <section style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-5); box-shadow: var(--shadow-sm);">
+      <!-- 错误信息 + 重试 -->
+    </section>
+  </main>
+</body>
+</html>
+```
+
+**必须覆盖的设计稿页面**：
+- 所有需求原型图中出现的页面（必须覆盖）
+- 每个页面的所有状态变体（正常、加载、空、错误）
+- 关键页面的桌面端和移动端布局
+- 组件的所有交互状态（悬停、聚焦、禁用等）
+
+### 产物六：交互说明（HTML）
+
+将步骤七的交互模式可视化为可交互的演示页面，开发者可直观理解每个交互行为的触发条件、视觉反馈和状态流转。
+
+**输出格式**：一个 HTML 文件 `interaction-spec.html`，包含所有交互模式的演示和说明。
+
+**交互说明设计原则**：
+- **可交互演示**：每个交互模式提供可操作的演示区域，用户可实际触发交互行为
+- **行为描述**：每个模式附带文字说明：触发条件、视觉反馈、状态变化、恢复方式
+- **对比展示**：正常 vs 错误 vs 边界情况并列展示
+- **动画示意**：用 CSS 动画模拟过渡效果（如 Toast 出现/消失、模态框打开/关闭）
+- **代码提示**：标注实现时的关键 CSS 类名或数据属性，方便开发者对应
+
+**HTML 结构**：
+
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[项目名称] — 交互说明</title>
+  <style>
+    /* 复用设计稿的设计令牌 */
+    :root { /* ... 同设计稿令牌 ... */ }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font: var(--text-body); background: #F8FAFC; color: var(--color-text-primary); }
+
+    .spec-header { background: var(--color-surface); border-bottom: 1px solid var(--color-border); padding: var(--space-4) var(--space-6); }
+    .spec-header h1 { font: var(--text-h2); }
+
+    .spec-section { max-width: 960px; margin: var(--space-6) auto; padding: 0 var(--space-4); }
+    .spec-section h2 { font: var(--text-h2); margin-bottom: var(--space-4); border-bottom: 2px solid var(--color-primary); padding-bottom: var(--space-2); }
+    .spec-section h3 { font: var(--text-h3); margin: var(--space-5) 0 var(--space-3); }
+
+    .spec-description { background: #F0F9FF; border-left: 3px solid var(--color-info); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); font: var(--text-body-sm); }
+
+    .spec-demo { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-5); margin-bottom: var(--space-4); }
+    .spec-demo-label { font: var(--text-caption); color: var(--color-secondary); margin-bottom: var(--space-2); text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .spec-table { width: 100%; border-collapse: collapse; margin-bottom: var(--space-4); font: var(--text-body-sm); }
+    .spec-table th { background: #F8FAFC; padding: var(--space-2) var(--space-3); text-align: left; border: 1px solid var(--color-border); font-weight: 600; }
+    .spec-table td { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); }
+
+    /* 交互演示样式和动画 */
+    /* ... 根据具体交互模式定义 ... */
+  </style>
+</head>
+<body>
+  <header class="spec-header">
+    <h1>[项目名称] — 交互说明</h1>
+  </header>
+
+  <!-- 交互模式1：表单 -->
+  <section class="spec-section">
+    <h2>表单交互</h2>
+    <div class="spec-description">
+      <strong>规则</strong>：失焦时行内校验；提交失败时顶部显示错误摘要；表单有效前禁用提交按钮；重新聚焦时清除错误。<br>
+      <strong>需求追溯</strong>：FR-xxx, NFR-xxx
+    </div>
+
+    <h3>行内校验</h3>
+    <div class="spec-demo">
+      <div class="spec-demo-label">演示区域</div>
+      <!-- 可交互的表单演示 -->
+    </div>
+
+    <table class="spec-table">
+      <tr><th>触发</th><th>视觉反馈</th><th>状态变化</th><th>恢复方式</th></tr>
+      <tr><td>输入框失焦（值无效）</td><td>红色边框 + 行内错误信息</td><td>字段 → 错误态</td><td>重新聚焦时清除错误</td></tr>
+      <tr><td>提交失败</td><td>顶部红色错误摘要横幅</td><td>表单 → 错误态</td><td>修正后重新提交</td></tr>
+    </table>
+  </section>
+
+  <!-- 交互模式2：删除/破坏性操作 -->
+  <section class="spec-section">
+    <h2>删除/破坏性操作</h2>
+    <!-- ... -->
+  </section>
+
+  <!-- 交互模式3：加载状态 -->
+  <section class="spec-section">
+    <h2>加载状态</h2>
+    <!-- ... -->
+  </section>
+
+  <!-- 交互模式4：Toast/通知 -->
+  <section class="spec-section">
+    <h2>Toast/通知</h2>
+    <!-- ... -->
+  </section>
+</body>
+</html>
+```
+
+**必须覆盖的交互模式**：
+- 表单交互（校验、提交、错误处理）
+- 删除/破坏性操作（确认、撤销）
+- 加载状态（骨架屏、旋转器、进度条）
+- Toast/通知（成功、错误、警告、信息）
+- 模态框/对话框（打开、关闭、焦点锁定）
+- 列表交互（排序、筛选、分页）
+- 任何项目特有的关键交互
+
+此交互说明是设计稿的重要补充——设计稿展示"长什么样"，交互说明展示"怎么动"。
 
 ## 反模式警示
 

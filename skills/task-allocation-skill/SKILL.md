@@ -15,8 +15,8 @@ description: >
 ## 输入
 
 此技能期望：
-1. **需求文档** — FR-xxx、NFR-xxx 及优先级（来自 req-analysis-skill）
-2. **设计规范** — 组件、页面、交互模式（来自 design-skill）
+1. **需求文档 + 需求原型图** — FR-xxx、NFR-xxx 及优先级、HTML 原型（来自 req-analysis-skill）
+2. **设计规范 + 设计稿 + 交互说明** — 组件、页面、交互模式、HTML 设计稿和交互说明（来自 design-skill）
 3. **评审报告** — 已通过，可能有条件（来自 review-skill）
 
 如果评审报告仍有未解决的致命或高优先级问题，建议先解决再进行任务拆分——分解仍然模糊的工作只会导致后期需要重新拆分。
