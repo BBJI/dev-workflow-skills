@@ -198,7 +198,7 @@ if ($Uninstall) {
 
     # Kill any running dashboard processes
     Get-ChildItem -Path $cacheDir -Filter ".dashboard.pid" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-        $pid = Get-Content $_.FullName -ErrorAction SilentlyContinue
+        $pid = Get-Content $_.FullName -Encoding utf8 -ErrorAction SilentlyContinue
         if ($pid) {
             try { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue } catch {}
         }
@@ -239,7 +239,7 @@ if ($Claude) {
         # 获取 commit sha 和版本号
         Push-Location $marketDir
         $gitSha = git rev-parse --short HEAD
-        $version = (Get-Content (Join-Path $marketDir ".claude-plugin\plugin.json") | ConvertFrom-Json).version
+        $version = (Get-Content (Join-Path $marketDir ".claude-plugin\plugin.json") -Encoding utf8 | ConvertFrom-Json).version
         Pop-Location
 
         # 创建 cache 目录结构
