@@ -109,6 +109,53 @@ NODEEOF
 }
 
 # -------------------------------------------
+# 更新 installed_plugins.json
+# -------------------------------------------
+update_installed_plugins() {
+  local VERSION="$1"
+  local GIT_SHA="$2"
+  local CACHE_DIR="$3"
+  local INSTALLED_FILE="$CLAUDE_DIR/plugins/installed_plugins.json"
+
+  local TEMP_FILE=$(mktemp /tmp/dev-workflow-skills.XXXXXX.js)
+  cat > "$TEMP_FILE" << NODEEOF
+const fs = require('fs');
+const path = require('path');
+const claudeDir = process.argv[2];
+const pluginName = process.argv[3];
+const version = process.argv[4];
+const gitSha = process.argv[5];
+const installPath = process.argv[6];
+
+try {
+    const installedPath = path.join(claudeDir, 'plugins', 'installed_plugins.json');
+    let data = { version: 2, plugins: {} };
+    if (fs.existsSync(installedPath)) {
+        data = JSON.parse(fs.readFileSync(installedPath, 'utf8'));
+    }
+    if (!data.plugins) data.plugins = {};
+
+    const key = pluginName + '@' + pluginName;
+    data.plugins[key] = [{
+        scope: 'user',
+        installPath: installPath,
+        version: version,
+        installedAt: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
+        gitCommitSha: gitSha
+    }];
+
+    fs.writeFileSync(installedPath, JSON.stringify(data, null, 2));
+    console.log('  ✅ installed_plugins.json 已更新');
+} catch (e) {
+    console.error('  ⚠️ 更新 installed_plugins.json 失败:', e.message);
+}
+NODEEOF
+  node "$TEMP_FILE" "$CLAUDE_DIR" "$PLUGIN_NAME" "$VERSION" "$GIT_SHA" "$CACHE_DIR"
+  rm -f "$TEMP_FILE"
+}
+
+# -------------------------------------------
 # 解析参数
 # -------------------------------------------
 INSTALL_CLAUDE=false
@@ -202,17 +249,42 @@ install_claude() {
 
   run_node_install install
 
-  # 清除旧缓存，强制 Claude Code 重新拉取
-  CACHE_DIR="$CLAUDE_DIR/plugins/cache/$PLUGIN_NAME"
+  # 克隆/更新 marketplace
   MARKET_DIR="$CLAUDE_DIR/plugins/marketplaces/$PLUGIN_NAME"
-  if [ -d "$CACHE_DIR" ]; then
-    rm -rf "$CACHE_DIR"
-    echo "  ✅ 插件缓存已清除，重启后将重新拉取"
-  fi
   if [ -d "$MARKET_DIR" ]; then
-    rm -rf "$MARKET_DIR"
-    echo "  ✅ marketplace 缓存已清除"
+    echo "  → 更新 marketplace..."
+    (cd "$MARKET_DIR" && git pull --ff-only 2>/dev/null || true)
+  else
+    echo "  → 克隆仓库到 marketplace..."
+    git clone --depth 1 "$REPO_URL" "$MARKET_DIR"
   fi
+
+  # 获取版本号和 commit sha
+  GIT_SHA=$(cd "$MARKET_DIR" && git rev-parse --short HEAD)
+  VERSION=$(node -e "console.log(require('$MARKET_DIR/.claude-plugin/plugin.json').version)")
+
+  # 创建 cache 目录结构
+  CACHE_DIR="$CLAUDE_DIR/plugins/cache/$PLUGIN_NAME/$PLUGIN_NAME/$VERSION"
+  rm -rf "$CACHE_DIR"
+  mkdir -p "$CACHE_DIR"
+
+  # 复制插件文件到 cache
+  cp -r "$MARKET_DIR/.claude-plugin" "$CACHE_DIR/"
+  cp -r "$MARKET_DIR/skills" "$CACHE_DIR/"
+  cp -r "$MARKET_DIR/commands" "$CACHE_DIR/"
+  [ -d "$MARKET_DIR/codex" ] && cp -r "$MARKET_DIR/codex" "$CACHE_DIR/"
+  [ -f "$MARKET_DIR/README.md" ] && cp "$MARKET_DIR/README.md" "$CACHE_DIR/"
+
+  # 创建 .claude/skills/ 目录（Claude Code 加载技能的标准路径）
+  mkdir -p "$CACHE_DIR/.claude/skills"
+  for skill_dir in "$CACHE_DIR/skills"/*/; do
+    [ -d "$skill_dir" ] && cp -r "$skill_dir" "$CACHE_DIR/.claude/skills/"
+  done
+
+  # 更新 installed_plugins.json
+  update_installed_plugins "$VERSION" "$GIT_SHA" "$CACHE_DIR"
+
+  echo "  ✅ 插件缓存已创建"
 
   echo ""
   echo "  🎉 Claude Code 安装完成！"

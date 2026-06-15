@@ -145,6 +145,43 @@ function Run-NodeScript {
 }
 
 # -------------------------------------------
+# Node.js 脚本：更新 installed_plugins.json
+# -------------------------------------------
+$NodeUpdateInstalledPlugin = @'
+const fs = require('fs');
+const path = require('path');
+const claudeDir = path.dirname(process.argv[2]);
+const pluginName = process.argv[3];
+const installPath = process.argv[4];
+const version = process.argv[5];
+const gitSha = process.argv[6];
+
+try {
+    const installedPath = path.join(claudeDir, 'plugins', 'installed_plugins.json');
+    let data = { version: 2, plugins: {} };
+    if (fs.existsSync(installedPath)) {
+        data = JSON.parse(fs.readFileSync(installedPath, 'utf8'));
+    }
+    if (!data.plugins) data.plugins = {};
+
+    const key = pluginName + '@' + pluginName;
+    data.plugins[key] = [{
+        scope: 'user',
+        installPath: installPath,
+        version: version,
+        installedAt: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
+        gitCommitSha: gitSha
+    }];
+
+    fs.writeFileSync(installedPath, JSON.stringify(data, null, 2));
+    console.log('  [OK] installed_plugins.json 已更新');
+} catch (e) {
+    console.error('  [WARN] 更新 installed_plugins.json 失败:', e.message);
+}
+'@
+
+# -------------------------------------------
 # 卸载
 # -------------------------------------------
 if ($Uninstall) {
@@ -178,17 +215,54 @@ if ($Claude) {
     if (Get-Command node -ErrorAction SilentlyContinue) {
         Run-NodeScript $NodeInstallScript @($SETTINGS_FILE, $PLUGIN_NAME, $REPO_URL)
 
-        # 清除旧缓存，强制 Claude Code 重新拉取
-        $cacheDir = Join-Path $CLAUDE_DIR "plugins\cache\$PLUGIN_NAME"
+        # 克隆/更新 marketplace
         $marketDir = Join-Path $CLAUDE_DIR "plugins\marketplaces\$PLUGIN_NAME"
+        if (Test-Path $marketDir) {
+            Write-Host "  更新 marketplace..." -ForegroundColor Gray
+            Push-Location $marketDir
+            try { git pull --ff-only 2>$null } catch {}
+            Pop-Location
+        } else {
+            Write-Host "  克隆仓库到 marketplace..." -ForegroundColor Gray
+            git clone --depth 1 $REPO_URL $marketDir
+        }
+
+        # 获取 commit sha 和版本号
+        Push-Location $marketDir
+        $gitSha = git rev-parse --short HEAD
+        $version = (Get-Content (Join-Path $marketDir ".claude-plugin\plugin.json") | ConvertFrom-Json).version
+        Pop-Location
+
+        # 创建 cache 目录结构
+        $cacheDir = Join-Path $CLAUDE_DIR "plugins\cache\$PLUGIN_NAME\$PLUGIN_NAME\$version"
         if (Test-Path $cacheDir) {
             Remove-Item $cacheDir -Recurse -Force
-            Write-Host "  [OK] 插件缓存已清除，重启后将重新拉取" -ForegroundColor Green
         }
-        if (Test-Path $marketDir) {
-            Remove-Item $marketDir -Recurse -Force
-            Write-Host "  [OK] marketplace 缓存已清除" -ForegroundColor Green
+        New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+
+        # 复制插件文件到 cache
+        Copy-Item (Join-Path $marketDir ".claude-plugin") $cacheDir -Recurse
+        Copy-Item (Join-Path $marketDir "skills") $cacheDir -Recurse
+        Copy-Item (Join-Path $marketDir "commands") $cacheDir -Recurse
+        Copy-Item (Join-Path $marketDir "codex") $cacheDir -Recurse -ErrorAction SilentlyContinue
+        if (Test-Path (Join-Path $marketDir "README.md")) {
+            Copy-Item (Join-Path $marketDir "README.md") $cacheDir
         }
+
+        # 创建 .claude/skills/ 目录（Claude Code 加载技能的标准路径）
+        $claudeSkillsDir = Join-Path $cacheDir ".claude\skills"
+        New-Item -ItemType Directory -Path $claudeSkillsDir -Force | Out-Null
+        $skillsDir = Join-Path $cacheDir "skills"
+        if (Test-Path $skillsDir) {
+            Get-ChildItem $skillsDir -Directory | ForEach-Object {
+                Copy-Item $_.FullName $claudeSkillsDir -Recurse
+            }
+        }
+
+        # 更新 installed_plugins.json
+        Run-NodeScript $NodeUpdateInstalledPlugin @($SETTINGS_FILE, $PLUGIN_NAME, $cacheDir, $version, $gitSha)
+
+        Write-Host "  [OK] 插件缓存已创建" -ForegroundColor Green
     } else {
         Write-Host "  [ERROR] 需要 Node.js 来更新配置文件" -ForegroundColor Red
         Write-Host ""
