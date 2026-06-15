@@ -1,13 +1,23 @@
 ---
-description: 测试验证 — 系统验证开发交付物是否符合规格
+description: 测试用例编写/测试验证 — 开发前编写测试用例驱动TDD，开发后验证交付物
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, LSP, Agent
 ---
 
-请使用 `test-skill` 技能执行测试验证。
+请使用 `test-skill` 技能执行测试任务。
 
 读取技能文件：`SKILL.md` 位于 `skills/test-skill/` 目录下（相对于本插件根目录）。
 
-按照技能中的流程执行：
+根据上下文自动判断模式：
+
+**模式一：测试用例编写**（开发前）— 基于需求文档、设计规范、原型图、设计稿、交互说明、技术实现文档编写完整测试用例
+1. 梳理测试范围
+2. 编写功能测试用例
+3. 编写非功能测试用例
+4. 编写无障碍测试用例
+5. 编写视觉一致性测试用例
+6. 汇总测试用例文档
+
+**模式二：测试验证**（开发后）— 对照需求和设计验证开发交付物
 1. 制定测试计划
 2. 功能测试
 3. 非功能测试（性能、无障碍、响应式、安全）
@@ -16,6 +26,6 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, LSP, Agent
 6. Bug报告
 7. 测试总结报告
 
-待测试的交付物如下：
+待测试的内容如下：
 
 $ARGUMENTS
