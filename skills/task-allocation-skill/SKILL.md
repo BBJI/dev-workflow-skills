@@ -251,3 +251,45 @@ T001 → T002 → T004 → T005 → T006（预计[X]天）
 - **忽略非编码任务**：初始化、文档、测试、代码评审、部署——这些也是任务。
 - **不留余量**：每个计划都需要缓冲。20%是估算不确定性的合理默认值。
 - **跟踪不行动**：进度跟踪只有当被阻塞项得到解除、有风险项得到关注时才有用。
+
+## Dashboard 状态更新
+
+当本技能在 workflow-skill 编排下运行时，`.dws/{项目名}/workflow-state.json` 存在。此时需在每个步骤的开始和完成时更新状态文件，使仪表盘能实时反映进度。
+
+**如果 `workflow-state.json` 不存在，跳过本节所有操作，不影响技能正常执行。**
+
+### 阶段映射
+
+本技能对应阶段 ID = 4。
+
+### 步骤映射
+
+| 步骤 | 状态文件步骤 ID |
+|------|----------------|
+| 步骤一：识别工作单元 | `task-step-1` |
+| 步骤二：映射任务到需求和设计 | `task-step-2` |
+| 步骤三：构建依赖图 | `task-step-3` |
+| 步骤四：估算工作量 | `task-step-4` |
+| 步骤五：分配优先级 | `task-step-5` |
+| 步骤六：创建迭代计划 | `task-step-6` |
+| 步骤七：跟踪进度 | `task-step-7` |
+
+### 更新规则
+
+**步骤开始时**：
+1. 读取 `.dws/{项目名}/workflow-state.json`
+2. 找到 `phases[4].steps` 中对应步骤 ID 的条目
+3. 设置 `status` 为 "in-progress"，`startedAt` 为当前 ISO 时间戳
+4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 4, action: "step-started", message: "{步骤名}", level: "info" }`
+5. 更新 `updatedAt`，写回文件
+
+**步骤完成时**：
+1. 读取 `.dws/{项目名}/workflow-state.json`
+2. 找到对应步骤，设置 `status` 为 "completed"，`completedAt` 为当前 ISO 时间戳
+3. 将本步骤产出的文件添加到 `phases[4].artifacts` 数组（任务分解、迭代计划、进度跟踪器）
+4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 4, action: "step-completed", message: "{步骤名}", level: "success" }`
+5. 更新 `updatedAt`，写回文件
+
+**步骤六完成后**：同时更新 `totalIterations` 字段为迭代计划中的迭代数。
+
+**activityLog 超过 200 条时**，删除最旧的条目。

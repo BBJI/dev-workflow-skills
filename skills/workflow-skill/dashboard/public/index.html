@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DWS Dashboard</title>
+<style>
+:root {
+  --c-bg: #0f0f1a;
+  --c-surface: #1a1a2e;
+  --c-surface2: #22223a;
+  --c-border: #2d2d4a;
+  --c-text: #e0e0ef;
+  --c-text2: #8888a8;
+  --c-primary: #4f8cff;
+  --c-success: #34d399;
+  --c-warning: #fbbf24;
+  --c-danger: #f87171;
+  --c-info: #60a5fa;
+  --c-pending: #4a4a6a;
+  --c-skipped: #3a3a5a;
+  --radius: 8px;
+  --shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--c-bg);color:var(--c-text);line-height:1.5;min-height:100vh}
+
+/* Header */
+.header{background:var(--c-surface);border-bottom:1px solid var(--c-border);padding:12px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100}
+.header h1{font-size:16px;font-weight:600;color:var(--c-text)}
+.status-badge{display:inline-flex;align-items:center;gap:6px;padding:3px 12px;border-radius:20px;font-size:12px;font-weight:500}
+.status-badge.in-progress{background:rgba(79,140,255,.15);color:var(--c-primary)}
+.status-badge.consensus-loop{background:rgba(251,191,36,.15);color:var(--c-warning)}
+.status-badge.tdd-loop{background:rgba(96,165,250,.15);color:var(--c-info)}
+.status-badge.blocked{background:rgba(248,113,113,.15);color:var(--c-danger)}
+.status-badge.completed{background:rgba(52,211,153,.15);color:var(--c-success)}
+.status-badge.not-started{background:rgba(74,74,106,.2);color:var(--c-text2)}
+.status-badge.failed{background:rgba(248,113,113,.2);color:var(--c-danger)}
+.conn-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.conn-dot.connected{background:var(--c-success)}
+.conn-dot.disconnected{background:var(--c-danger);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.3}}
+.phase-label{margin-left:auto;font-size:13px;color:var(--c-text2)}
+
+/* Timeline */
+.timeline{background:var(--c-surface);border-bottom:1px solid var(--c-border);padding:16px 24px;display:flex;align-items:center;gap:0;overflow-x:auto}
+.phase-node{display:flex;flex-direction:column;align-items:center;min-width:80px;cursor:pointer;position:relative;transition:transform .15s}
+.phase-node:hover{transform:scale(1.05)}
+.phase-node.active{transform:scale(1.1)}
+.phase-circle{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;border:2px solid var(--c-pending);color:var(--c-text2);background:var(--c-surface2);transition:all .3s}
+.phase-node.pending .phase-circle{border-color:var(--c-pending);color:var(--c-text2)}
+.phase-node.in-progress .phase-circle{border-color:var(--c-primary);color:var(--c-primary);background:rgba(79,140,255,.1);animation:pulse 2s infinite}
+.phase-node.completed .phase-circle{border-color:var(--c-success);color:#fff;background:var(--c-success)}
+.phase-node.blocked .phase-circle{border-color:var(--c-danger);color:var(--c-danger);background:rgba(248,113,113,.1)}
+.phase-node.skipped .phase-circle{border-color:var(--c-skipped);color:var(--c-text2);background:var(--c-skipped);text-decoration:line-through}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(79,140,255,.4)}50%{box-shadow:0 0 0 8px rgba(79,140,255,0)}}
+.phase-name{font-size:10px;margin-top:6px;color:var(--c-text2);text-align:center;white-space:nowrap}
+.phase-node.active .phase-name{color:var(--c-text);font-weight:500}
+.phase-connector{width:24px;height:2px;background:var(--c-pending);flex-shrink:0;margin-top:14px}
+.phase-connector.completed{background:var(--c-success)}
+
+/* Main layout */
+.main{display:flex;gap:0;min-height:calc(100vh - 130px)}
+.panel-main{flex:1;padding:20px 24px;overflow-y:auto;border-right:1px solid var(--c-border)}
+.panel-side{width:380px;padding:20px;overflow-y:auto;background:var(--c-surface);display:flex;flex-direction:column;gap:20px}
+
+/* Phase detail */
+.phase-detail h2{font-size:18px;margin-bottom:4px}
+.phase-detail .phase-meta{font-size:12px;color:var(--c-text2);margin-bottom:16px}
+
+/* Steps */
+.step-list{display:flex;flex-direction:column;gap:6px;margin-bottom:24px}
+.step-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius);background:var(--c-surface2);font-size:13px;transition:background .2s}
+.step-item:hover{background:var(--c-border)}
+.step-icon{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
+.step-item.pending .step-icon{border:2px solid var(--c-pending);color:var(--c-text2)}
+.step-item.in-progress .step-icon{border:2px solid var(--c-primary);color:var(--c-primary);animation:pulse 2s infinite}
+.step-item.completed .step-icon{border:none;background:var(--c-success);color:#fff}
+.step-item.blocked .step-icon{border:2px solid var(--c-danger);color:var(--c-danger)}
+.step-item.skipped .step-icon{border:2px solid var(--c-skipped);color:var(--c-text2)}
+.step-name{flex:1}
+.step-detail{font-size:11px;color:var(--c-text2)}
+.step-time{font-size:11px;color:var(--c-text2);white-space:nowrap}
+
+/* Artifacts */
+.artifacts h3{font-size:14px;margin-bottom:10px;color:var(--c-text2)}
+.artifact-list{display:flex;flex-direction:column;gap:4px;margin-bottom:24px}
+.artifact-item{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:var(--radius);font-size:13px;cursor:pointer;background:var(--c-surface2);transition:background .2s}
+.artifact-item:hover{background:var(--c-border)}
+.artifact-icon{font-size:14px}
+.artifact-name{flex:1}
+.artifact-type{font-size:10px;padding:2px 6px;border-radius:10px;background:var(--c-border);color:var(--c-text2)}
+
+/* Consensus tracker */
+.tracker-panel h3{font-size:14px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.convergence-badge{font-size:11px;padding:2px 8px;border-radius:10px}
+.convergence-badge.converging{background:rgba(52,211,153,.15);color:var(--c-success)}
+.convergence-badge.stalled{background:rgba(251,191,36,.15);color:var(--c-warning)}
+.convergence-badge.diverging{background:rgba(248,113,113,.15);color:var(--c-danger)}
+.tracker-table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px}
+.tracker-table th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--c-border);color:var(--c-text2);font-weight:500}
+.tracker-table td{padding:6px 8px;border-bottom:1px solid rgba(45,45,74,.5)}
+.tracker-table tr.current-round{background:rgba(79,140,255,.1)}
+.bar-chart{display:flex;align-items:flex-end;gap:6px;height:60px;padding:4px 0;margin-bottom:8px}
+.bar{display:flex;flex-direction:column;justify-content:flex-end;min-width:28px;border-radius:3px 3px 0 0;transition:height .3s}
+.bar-fatal{background:var(--c-danger)}
+.bar-high{background:var(--c-warning)}
+.bar-label{font-size:10px;color:var(--c-text2);text-align:center}
+
+/* Bug tracker */
+.bug-bar-chart{display:flex;align-items:flex-end;gap:6px;height:60px;padding:4px 0;margin-bottom:8px}
+.bug-bar{min-width:28px;border-radius:3px 3px 0 0;transition:height .3s}
+.bug-bar.remaining{background:var(--c-danger)}
+.bug-bar.fixed{background:var(--c-success)}
+
+/* Activity log */
+.activity-log h3{font-size:14px;margin-bottom:10px}
+.log-list{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow-y:auto;font-size:12px}
+.log-entry{display:flex;gap:8px;padding:4px 8px;border-radius:4px;animation:fadeIn .3s}
+.log-entry:hover{background:var(--c-surface2)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.log-time{color:var(--c-text2);white-space:nowrap;font-family:monospace;font-size:11px}
+.log-phase{width:20px;text-align:center;flex-shrink:0;font-size:11px}
+.log-msg{flex:1;color:var(--c-text)}
+.log-level{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:6px}
+.log-level.info{background:var(--c-info)}
+.log-level.warning{background:var(--c-warning)}
+.log-level.error{background:var(--c-danger)}
+.log-level.success{background:var(--c-success)}
+
+/* Artifact preview modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:center;justify-content:center;padding:24px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--c-surface);border-radius:var(--radius);width:100%;max-width:1000px;height:80vh;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--c-border)}
+.modal-header h3{font-size:14px}
+.modal-close{background:none;border:none;color:var(--c-text2);font-size:20px;cursor:pointer;padding:4px 8px}
+.modal-close:hover{color:var(--c-text)}
+.modal-body{flex:1;overflow:hidden}
+.modal-body iframe{width:100%;height:100%;border:none;background:#fff}
+.modal-body .md-content{padding:24px;overflow-y:auto;height:100%;background:#fff;color:#1a1a2e}
+
+/* Empty state */
+.empty-state{text-align:center;padding:60px 24px;color:var(--c-text2)}
+.empty-state p{font-size:14px;margin-top:8px}
+.empty-state .spinner{width:40px;height:40px;border:3px solid var(--c-border);border-top-color:var(--c-primary);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Responsive */
+@media(max-width:1024px){
+  .main{flex-direction:column}
+  .panel-side{width:100%;border-top:1px solid var(--c-border)}
+  .panel-main{border-right:none}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1 id="projectName">DWS Dashboard</h1>
+  <span id="statusBadge" class="status-badge not-started">not-started</span>
+  <span class="conn-dot disconnected" id="connDot"></span>
+  <span class="phase-label" id="phaseLabel">Connecting...</span>
+  <span style="margin-left:auto;font-size:12px;color:var(--c-text2)">更新: <span id="lastRefresh">--:--:--</span></span>
+</div>
+
+<div class="timeline" id="timeline"></div>
+
+<div class="main">
+  <div class="panel-main" id="panelMain">
+    <div class="empty-state" id="emptyState">
+      <div class="spinner"></div>
+      <p>Waiting for workflow state...</p>
+    </div>
+  </div>
+  <div class="panel-side" id="panelSide">
+    <div class="activity-log">
+      <h3>Activity Log</h3>
+      <div class="log-list" id="logList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Artifact Preview</h3>
+      <button class="modal-close" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+const PHASES = [
+  { id: 0, name: '规范生成', fullName: '项目规范生成', skill: 'instruction-skill' },
+  { id: 1, name: '需求分析', fullName: '需求分析', skill: 'req-analysis-skill' },
+  { id: 2, name: 'UI/UX设计', fullName: 'UI/UX设计', skill: 'design-skill' },
+  { id: 3, name: '实现评估', fullName: '实现评估（共识闭环）', skill: 'review-skill' },
+  { id: 4, name: '任务拆分', fullName: '任务拆分', skill: 'task-allocation-skill' },
+  { id: 5, name: '测试用例', fullName: '测试用例编写', skill: 'test-skill' },
+  { id: 6, name: 'TDD开发', fullName: 'TDD开发实现', skill: 'dev-skill' },
+  { id: 7, name: '测试验证', fullName: '测试验证', skill: 'test-skill' },
+];
+
+const STEP_ICONS = {
+  pending: '○',     // ○
+  'in-progress': '◎', // ◎
+  completed: '✓',   // ✓
+  blocked: '✗',     // ✗
+  skipped: '—',     // —
+};
+
+let prevState = null;
+let selectedPhase = null;
+let reconnectDelay = 1000;
+
+// ── SSE Connection ──────────────────────────────────
+let sseEventCount = 0;
+function connectSSE() {
+  console.log('[DWS] SSE connecting...');
+  const es = new EventSource('/events');
+
+  es.onopen = () => {
+    console.log('[DWS] SSE connected');
+    setConnected(true);
+  };
+
+  es.addEventListener('state', (e) => {
+    sseEventCount++;
+    try {
+      const state = JSON.parse(e.data);
+      console.log('[DWS] SSE state event #' + sseEventCount, 'phase:', state.currentPhase, 'status:', state.overallStatus);
+      renderState(state);
+      prevState = state;
+      setConnected(true);
+      reconnectDelay = 1000;
+      updateLastRefresh();
+    } catch (err) {
+      console.error('[DWS] SSE render error:', err);
+    }
+  });
+
+  es.addEventListener('error', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      console.warn('[DWS] SSE server error:', data.message);
+    } catch {}
+  });
+
+  es.onerror = () => {
+    console.warn('[DWS] SSE connection lost, reconnecting in', reconnectDelay + 'ms');
+    setConnected(false);
+    es.close();
+    setTimeout(() => {
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+      connectSSE();
+    }, reconnectDelay);
+  };
+}
+
+function updateLastRefresh() {
+  const el = document.getElementById('lastRefresh');
+  if (el) el.textContent = new Date().toLocaleTimeString();
+}
+
+function setConnected(connected) {
+  const dot = document.getElementById('connDot');
+  dot.className = 'conn-dot ' + (connected ? 'connected' : 'disconnected');
+}
+
+// ── Render ──────────────────────────────────────────
+function renderState(state) {
+  const emptyEl = document.getElementById('emptyState');
+  if (emptyEl) emptyEl.style.display = 'none';
+  document.getElementById('projectName').textContent = state.projectName || 'DWS Dashboard';
+
+  // Status badge
+  const badge = document.getElementById('statusBadge');
+  const statusText = {
+    'not-started': '未开始', 'in-progress': '进行中', 'blocked': '已阻塞',
+    'consensus-loop': '共识闭环', 'tdd-loop': 'TDD闭环',
+    'completed': '已完成', 'failed': '失败'
+  };
+  badge.textContent = statusText[state.overallStatus] || state.overallStatus;
+  badge.className = 'status-badge ' + (state.overallStatus || 'not-started');
+
+  // Phase label
+  const currentPhaseData = PHASES[state.currentPhase];
+  document.getElementById('phaseLabel').textContent = currentPhaseData
+    ? `${currentPhaseData.fullName}${state.currentIteration > 1 ? ' (迭代 ' + state.currentIteration + ')' : ''}`
+    : '';
+
+  renderTimeline(state);
+  renderPhaseDetail(state);
+  renderSidePanel(state);
+}
+
+function renderTimeline(state) {
+  const el = document.getElementById('timeline');
+  const phases = state.phases || [];
+  let html = '';
+
+  phases.forEach((p, i) => {
+    if (i > 0) {
+      const prevCompleted = phases[i - 1]?.status === 'completed';
+      html += `<div class="phase-connector${prevCompleted ? ' completed' : ''}"></div>`;
+    }
+    const active = p.id === state.currentPhase;
+    html += `<div class="phase-node ${p.status}${active ? ' active' : ''}" data-phase="${p.id}" onclick="selectPhase(${p.id})">
+      <div class="phase-circle">${p.id}</div>
+      <div class="phase-name">${PHASES[p.id]?.name || p.name}</div>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+}
+
+function selectPhase(id) {
+  selectedPhase = id;
+  if (prevState) renderPhaseDetail(prevState);
+}
+
+function renderPhaseDetail(state) {
+  const el = document.getElementById('panelMain');
+  const phaseId = selectedPhase !== null ? selectedPhase : state.currentPhase;
+  const phase = (state.phases || []).find(p => p.id === phaseId);
+
+  if (!phase) {
+    el.innerHTML = '<div class="empty-state"><p>无阶段数据</p></div>';
+    return;
+  }
+
+  let html = `<div class="phase-detail">
+    <h2>${PHASES[phase.id]?.fullName || phase.name}</h2>
+    <div class="phase-meta">${phase.skill} &middot; ${statusLabel(phase.status)}`;
+  if (phase.startedAt) html += ` &middot; 开始: ${fmtTime(phase.startedAt)}`;
+  if (phase.completedAt) html += ` &middot; 完成: ${fmtTime(phase.completedAt)}`;
+  html += '</div>';
+
+  // Steps
+  if (phase.steps && phase.steps.length > 0) {
+    html += '<div class="step-list">';
+    phase.steps.forEach(step => {
+      html += `<div class="step-item ${step.status}">
+        <div class="step-icon">${STEP_ICONS[step.status] || ''}</div>
+        <span class="step-name">${step.name}</span>
+        ${step.detail ? `<span class="step-detail">${step.detail}</span>` : ''}
+        ${step.status !== 'pending' ? `<span class="step-time">${fmtDuration(step.startedAt, step.completedAt)}</span>` : ''}
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  // Artifacts
+  if (phase.artifacts && phase.artifacts.length > 0) {
+    html += '<div class="artifacts"><h3>产物</h3><div class="artifact-list">';
+    phase.artifacts.forEach(a => {
+      const icon = a.type === 'html' ? '&#128196;' : a.type === 'markdown' ? '&#128221;' : '&#128206;';
+      html += `<div class="artifact-item" onclick="openArtifact('${escAttr(a.path)}','${a.type}','${escAttr(a.name)}')">
+        <span class="artifact-icon">${icon}</span>
+        <span class="artifact-name">${a.name}</span>
+        <span class="artifact-type">${a.type}</span>
+      </div>`;
+    });
+    html += '</div></div>';
+  }
+
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function renderSidePanel(state) {
+  const el = document.getElementById('panelSide');
+  let html = '';
+
+  // Consensus tracker (Phase 3)
+  if (state.consensusTracker && state.consensusTracker.rounds.length > 0) {
+    const ct = state.consensusTracker;
+    html += '<div class="tracker-panel"><h3>共识闭环 ';
+    const convergence = getConvergence(ct.rounds);
+    html += `<span class="convergence-badge ${convergence}">${convergenceLabel(convergence)}</span></h3>`;
+
+    html += '<table class="tracker-table"><tr><th>轮次</th><th>致命</th><th>高</th><th>中</th><th>低</th><th>需求调整</th><th>设计调整</th></tr>';
+    ct.rounds.forEach(r => {
+      const isCurrent = r.round === ct.currentRound;
+      html += `<tr class="${isCurrent ? 'current-round' : ''}"><td>${r.round}</td><td>${r.fatalIssues}</td><td>${r.highIssues}</td><td>${r.mediumIssues || '-'}</td><td>${r.lowIssues || '-'}</td><td>${r.reqAdjustments}</td><td>${r.designAdjustments}</td></tr>`;
+    });
+    html += '</table>';
+
+    // Bar chart
+    const maxIssues = Math.max(...ct.rounds.map(r => r.fatalIssues + r.highIssues), 1);
+    html += '<div class="bar-chart">';
+    ct.rounds.forEach(r => {
+      const fatalH = (r.fatalIssues / maxIssues) * 56;
+      const highH = (r.highIssues / maxIssues) * 56;
+      html += `<div style="display:flex;flex-direction:column;align-items:center"><div class="bar" style="height:${fatalH + highH}px"><div class="bar-fatal" style="height:${fatalH}px"></div><div class="bar-high" style="height:${highH}px"></div></div><div class="bar-label">R${r.round}</div></div>`;
+    });
+    html += '</div>';
+    html += '</div>';
+  }
+
+  // Bug tracker (Phases 6-7)
+  if (state.bugTracker && state.bugTracker.rounds.length > 0) {
+    const bt = state.bugTracker;
+    html += '<div class="tracker-panel"><h3>Bug 跟踪 ';
+    const convergence = getBugConvergence(bt.rounds);
+    html += `<span class="convergence-badge ${convergence}">${convergenceLabel(convergence)}</span></h3>`;
+
+    html += '<table class="tracker-table"><tr><th>轮次</th><th>新增</th><th>已修复</th><th>剩余</th></tr>';
+    bt.rounds.forEach(r => {
+      const isCurrent = r.round === bt.currentRound;
+      html += `<tr class="${isCurrent ? 'current-round' : ''}"><td>${r.round}</td><td>${r.newBugs}</td><td>${r.fixedBugs}</td><td>${r.remainingBugs}</td></tr>`;
+    });
+    html += '</table>';
+
+    const maxBugs = Math.max(...bt.rounds.map(r => r.newBugs + r.remainingBugs), 1);
+    html += '<div class="bug-bar-chart">';
+    bt.rounds.forEach(r => {
+      const h = (r.remainingBugs / maxBugs) * 56;
+      html += `<div style="display:flex;flex-direction:column;align-items:center"><div class="bug-bar remaining" style="height:${Math.max(h, 2)}px"></div><div class="bar-label">R${r.round}</div></div>`;
+    });
+    html += '</div>';
+    html += '</div>';
+  }
+
+  // Activity log
+  html += '<div class="activity-log"><h3>Activity Log</h3><div class="log-list" id="logList">';
+  const logs = (state.activityLog || []).slice(-50);
+  logs.forEach(entry => {
+    html += `<div class="log-entry">
+      <span class="log-level ${entry.level || 'info'}"></span>
+      <span class="log-time">${fmtTime(entry.timestamp)}</span>
+      <span class="log-phase">${entry.phase}</span>
+      <span class="log-msg">${entry.message}</span>
+    </div>`;
+  });
+  html += '</div></div>';
+
+  el.innerHTML = html;
+
+  // Auto-scroll log
+  const logList = document.getElementById('logList');
+  if (logList) logList.scrollTop = logList.scrollHeight;
+}
+
+// ── Artifact preview ────────────────────────────────
+function openArtifact(path, type, name) {
+  const overlay = document.getElementById('modalOverlay');
+  const body = document.getElementById('modalBody');
+  const title = document.getElementById('modalTitle');
+
+  title.textContent = name;
+
+  if (type === 'html') {
+    body.innerHTML = `<iframe src="/artifacts/${encodeURIComponent(path)}"></iframe>`;
+  } else if (type === 'markdown') {
+    body.innerHTML = `<div class="md-content"><iframe src="/artifacts/${encodeURIComponent(path)}" style="width:100%;height:100%;border:none"></iframe></div>`;
+  } else {
+    window.open(`/artifacts/${encodeURIComponent(path)}`, '_blank');
+    return;
+  }
+
+  overlay.classList.add('open');
+}
+
+document.getElementById('modalClose').onclick = () => {
+  document.getElementById('modalOverlay').classList.remove('open');
+  document.getElementById('modalBody').innerHTML = '';
+};
+
+document.getElementById('modalOverlay').onclick = (e) => {
+  if (e.target === e.currentTarget) {
+    document.getElementById('modalClose').click();
+  }
+};
+
+// ── Helpers ─────────────────────────────────────────
+function statusLabel(s) {
+  const m = { pending: '待开始', 'in-progress': '进行中', completed: '已完成', blocked: '已阻塞', skipped: '已跳过' };
+  return m[s] || s;
+}
+
+function fmtTime(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch { return ''; }
+}
+
+function fmtDuration(start, end) {
+  if (!start) return '';
+  try {
+    const s = new Date(start);
+    const e = end ? new Date(end) : new Date();
+    const sec = Math.round((e - s) / 1000);
+    if (sec < 0) return '0s';
+    if (sec < 60) return sec + 's';
+    const min = Math.floor(sec / 60);
+    const remSec = sec % 60;
+    if (min < 60) return min + 'm ' + remSec + 's';
+    const hr = Math.floor(min / 60);
+    return hr + 'h ' + (min % 60) + 'm';
+  } catch { return ''; }
+}
+
+function escAttr(s) {
+  return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+function getConvergence(rounds) {
+  if (rounds.length < 2) return 'stalled';
+  const last = rounds[rounds.length - 1];
+  const prev = rounds[rounds.length - 2];
+  if (last.fatalIssues === 0 && last.highIssues === 0) return 'converging';
+  if (last.fatalIssues + last.highIssues < prev.fatalIssues + prev.highIssues) return 'converging';
+  if (last.fatalIssues + last.highIssues > prev.fatalIssues + prev.highIssues) return 'diverging';
+  return 'stalled';
+}
+
+function getBugConvergence(rounds) {
+  if (rounds.length < 2) return 'stalled';
+  const last = rounds[rounds.length - 1];
+  if (last.remainingBugs === 0) return 'converging';
+  const prev = rounds[rounds.length - 2];
+  if (last.remainingBugs < prev.remainingBugs) return 'converging';
+  if (last.remainingBugs > prev.remainingBugs) return 'diverging';
+  return 'stalled';
+}
+
+function convergenceLabel(c) {
+  const m = { converging: '收敛中', stalled: '停滞', diverging: '发散' };
+  return m[c] || c;
+}
+
+// ── Init ────────────────────────────────────────────
+connectSSE();
+
+// Also fetch initial state via API
+fetch('/api/state')
+  .then(r => r.json())
+  .then(state => {
+    if (!prevState) {
+      renderState(state);
+      prevState = state;
+      updateLastRefresh();
+      console.log('[DWS] Initial state loaded via API');
+    }
+  })
+  .catch((err) => { console.warn('[DWS] API fetch failed:', err) });
+</script>
+</body>
+</html>

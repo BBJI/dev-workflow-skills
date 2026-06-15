@@ -217,6 +217,12 @@ if [ "$UNINSTALL" = true ]; then
   # 清理缓存
   CACHE_DIR="$CLAUDE_DIR/plugins/cache/$PLUGIN_NAME"
   MARKET_DIR="$CLAUDE_DIR/plugins/marketplaces/$PLUGIN_NAME"
+
+  # Kill any running dashboard processes
+  find "$CACHE_DIR" -name ".dashboard.pid" -exec cat {} \; 2>/dev/null | while read pid; do
+    kill "$pid" 2>/dev/null || true
+  done
+
   rm -rf "$CACHE_DIR" "$MARKET_DIR" 2>/dev/null
   echo "  ✅ 缓存已清理"
   echo ""
@@ -272,6 +278,19 @@ install_claude() {
   cp -r "$MARKET_DIR/.claude-plugin" "$CACHE_DIR/"
   cp -r "$MARKET_DIR/skills" "$CACHE_DIR/"
   cp -r "$MARKET_DIR/commands" "$CACHE_DIR/"
+
+  # Install dashboard dependencies
+  DASHBOARD_DIR="$CACHE_DIR/skills/workflow-skill/dashboard"
+  if [ -d "$DASHBOARD_DIR" ] && [ -f "$DASHBOARD_DIR/package.json" ]; then
+    echo "  → Installing dashboard dependencies..."
+    (cd "$DASHBOARD_DIR" && npm install --production 2>/dev/null)
+    if [ $? -eq 0 ]; then
+      echo "  ✅ Dashboard dependencies installed"
+    else
+      echo "  ⚠️  Dashboard dependencies installation failed (dashboard will not be available)"
+      echo "     You can install manually: cd ~/.claude/plugins/cache/dev-workflow-skills/.../skills/workflow-skill/dashboard && npm install"
+    fi
+  fi
   [ -d "$MARKET_DIR/codex" ] && cp -r "$MARKET_DIR/codex" "$CACHE_DIR/"
   [ -f "$MARKET_DIR/README.md" ] && cp "$MARKET_DIR/README.md" "$CACHE_DIR/"
 

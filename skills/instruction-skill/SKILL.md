@@ -272,6 +272,44 @@ alwaysApply: false
 - **遗漏命令**：如果 AI 不知道怎么跑测试，它就不会跑测试。
 - **缺少负面约束**：告诉 AI 不要做什么和告诉它要做什么一样重要。
 
+## Dashboard 状态更新
+
+当本技能在 workflow-skill 编排下运行时，`.dws/{项目名}/workflow-state.json` 存在。此时需在每个步骤的开始和完成时更新状态文件，使仪表盘能实时反映进度。
+
+**如果 `workflow-state.json` 不存在，跳过本节所有操作，不影响技能正常执行。**
+
+### 阶段映射
+
+本技能对应阶段 ID = 0。
+
+### 步骤映射
+
+| 步骤 | 状态文件步骤 ID |
+|------|----------------|
+| 步骤一：确定项目类型和目标工具 | `instruct-step-1` |
+| 步骤二：收集项目信息 | `instruct-step-2` |
+| 步骤三：编写统一源文档 | `instruct-step-3` |
+| 步骤四：派生工具特定格式 | `instruct-step-4` |
+| 步骤五：验证与输出 | `instruct-step-5` |
+
+### 更新规则
+
+**步骤开始时**：
+1. 读取 `.dws/{项目名}/workflow-state.json`
+2. 找到 `phases[0].steps` 中对应步骤 ID 的条目
+3. 设置 `status` 为 "in-progress"，`startedAt` 为当前 ISO 时间戳
+4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 0, action: "step-started", message: "{步骤名}", level: "info" }`
+5. 更新 `updatedAt`，写回文件
+
+**步骤完成时**：
+1. 读取 `.dws/{项目名}/workflow-state.json`
+2. 找到对应步骤，设置 `status` 为 "completed"，`completedAt` 为当前 ISO 时间戳
+3. 如果本步骤产出了文件，添加到 `phases[0].artifacts` 数组
+4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 0, action: "step-completed", message: "{步骤名}", level: "success" }`
+5. 更新 `updatedAt`，写回文件
+
+**activityLog 超过 200 条时**，删除最旧的条目。
+
 ## 参考资料
 
 各工具的规范文件详细格式说明，阅读 `references/tool-formats.md`。

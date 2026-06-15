@@ -383,3 +383,42 @@ description: >
 3. 更新追溯矩阵
 4. 重新验证一致性
 5. 对文档进行版本管理（澄清为小版本递增，范围变更为大版本递增）
+
+## Dashboard 状态更新
+
+当本技能在 workflow-skill 编排下运行时，`.dws/{项目名}/workflow-state.json` 存在。此时需在每个步骤的开始和完成时更新状态文件，使仪表盘能实时反映进度。
+
+**如果 `workflow-state.json` 不存在，跳过本节所有操作，不影响技能正常执行。**
+
+### 阶段映射
+
+本技能对应阶段 ID = 1。
+
+### 步骤映射
+
+| 步骤 | 状态文件步骤 ID |
+|------|----------------|
+| 步骤一：接收与解析 | `req-step-1` |
+| 步骤二：澄清 | `req-step-2` |
+| 步骤三：分解 | `req-step-3` |
+| 步骤四：结构化 | `req-step-4` |
+| 步骤五：验证 | `req-step-5` |
+| 步骤六：输出产物 | `req-step-6` |
+
+### 更新规则
+
+**步骤开始时**：
+1. 读取 `.dws/{项目名}/workflow-state.json`
+2. 找到 `phases[1].steps` 中对应步骤 ID 的条目
+3. 设置 `status` 为 "in-progress"，`startedAt` 为当前 ISO 时间戳
+4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 1, action: "step-started", message: "{步骤名}", level: "info" }`
+5. 更新 `updatedAt`，写回文件
+
+**步骤完成时**：
+1. 读取 `.dws/{项目名}/workflow-state.json`
+2. 找到对应步骤，设置 `status` 为 "completed"，`completedAt` 为当前 ISO 时间戳
+3. 将本步骤产出的文件添加到 `phases[1].artifacts` 数组（步骤六产出最多：需求文档、追溯矩阵、待决问题、原型图 HTML）
+4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 1, action: "step-completed", message: "{步骤名}", level: "success" }`
+5. 更新 `updatedAt`，写回文件
+
+**activityLog 超过 200 条时**，删除最旧的条目。

@@ -362,6 +362,155 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 4. **初始化工作流状态**并开始第一阶段。
 
+## Dashboard 集成
+
+工作流支持实时可视化仪表盘，让用户在浏览器中跟踪工作流的执行进度、步骤状态、制品和收敛趋势。
+
+### 启动仪表盘
+
+在步骤4"初始化工作流状态"中，同时执行以下操作：
+
+1. **创建状态文件**：在 `.dws/{项目名}/workflow-state.json` 中写入初始状态。所有阶段 status 设为 "pending"（新项目阶段零设为 "skipped"，已有项目阶段零设为 "pending"），consensusTracker 和 bugTracker 设为 null，activityLog 为空数组。完整 JSON 结构见下方"状态文件结构"。
+
+2. **启动仪表盘服务器**：在后台启动 Node.js 服务器：
+   ```bash
+   node "{本文件所在目录}/dashboard/server.mjs" --project-root "{项目根目录}" --project-name "{项目名}" --port 3456
+   ```
+   - `{本文件所在目录}` = 本 SKILL.md 文件所在的目录。使用 Bash 工具执行时，可通过 `dirname` 定位：先执行 `SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null)")"` 获取路径，然后使用 `node "$SKILL_DIR/dashboard/server.mjs" ...` 启动
+   - 使用 Bash 工具以后台方式启动（`&` 后缀，不等待进程结束）
+   - 如果端口 3456 被占用，服务器会自动尝试 3457-3465
+
+3. **告知用户**：输出 `Dashboard available at: http://localhost:{端口号}`
+
+4. **如果 Node.js 不可用**：跳过仪表盘启动，仅输出提示"Dashboard 不可用（需要 Node.js）。工作流将继续正常运行。"
+
+### 状态文件结构
+
+`workflow-state.json` 的完整结构：
+
+```json
+{
+  "projectName": "项目名",
+  "projectType": "existing|new",
+  "currentPhase": 0,
+  "currentIteration": 1,
+  "totalIterations": null,
+  "overallStatus": "in-progress",
+  "autonomyLevel": "semi",
+  "startedAt": "ISO时间戳",
+  "updatedAt": "ISO时间戳",
+  "completedAt": null,
+  "phases": [
+    {
+      "id": 0,
+      "name": "项目规范生成",
+      "skill": "instruction-skill",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "steps": [
+        { "id": "instruct-step-1", "name": "确定项目类型和目标工具", "status": "pending", "startedAt": null, "completedAt": null, "detail": "" }
+      ],
+      "artifacts": []
+    }
+  ],
+  "consensusTracker": null,
+  "bugTracker": null,
+  "activityLog": []
+}
+```
+
+各阶段的 steps 列表（初始化时写入，执行时更新 status）：
+
+| 阶段 | 步骤 |
+|------|------|
+| 0-项目规范 | instruct-step-1~5: 确定项目类型/收集信息/编写源文档/派生格式/验证输出 |
+| 1-需求分析 | req-step-1~6: 接收解析/澄清/分解/结构化/验证/输出 |
+| 2-UI/UX设计 | design-step-1~8: 理解需求/信息架构/用户流程/设计令牌/组件/页面/交互/无障碍 |
+| 3-实现评估 | review-step-1~7: 需求覆盖/一致性/可行性/缺口分析/风险/技术文档/评审报告 |
+| 4-任务拆分 | task-step-1~7: 识别单元/映射/依赖图/估算/优先级/迭代计划/跟踪 |
+| 5-测试用例 | test-write-step-1~6: 梳理范围/功能/非功能/无障碍/视觉/汇总 |
+| 6-TDD开发 | dev-step-1~6: 理解任务/探索/TDD实现/补充测试/自检/Bug修复 |
+| 7-测试验证 | test-verify-step-1~7: 计划/功能/非功能/视觉/回归/Bug报告/总结 |
+
+### 阶段转换更新
+
+在每个阶段开始和完成时，读取并更新 `workflow-state.json`：
+
+**阶段开始时**：
+1. 读取 `workflow-state.json`
+2. 设置 `currentPhase` 为当前阶段 ID
+3. 设置 `phases[N].status` 为 "in-progress"
+4. 设置 `phases[N].startedAt` 为当前 ISO 时间戳
+5. 设置 `phases[N].steps[0].status` 为 "in-progress"
+6. 更新 `updatedAt` 为当前时间
+7. 在 `activityLog` 末尾追加：`{ timestamp, phase: N, action: "phase-started", message: "开始{阶段名}", level: "info" }`
+8. 写回文件
+
+**阶段完成时**：
+1. 读取 `workflow-state.json`
+2. 设置 `phases[N].status` 为 "completed"
+3. 设置 `phases[N].completedAt` 为当前 ISO 时间戳
+4. 将阶段内所有未完成的步骤 status 设为 "completed"
+5. 更新 `phases[N].artifacts` 为本阶段产出的所有制品
+6. 更新 `updatedAt`
+7. 在 `activityLog` 末尾追加：`{ timestamp, phase: N, action: "phase-completed", message: "完成{阶段名}", level: "success" }`
+8. 写回文件
+
+### 共识闭环更新（阶段三）
+
+在共识闭环中，每轮评审后更新状态：
+
+1. 设置 `overallStatus` 为 "consensus-loop"
+2. 如果 `consensusTracker` 为 null，初始化：`{ rounds: [], currentRound: 0, maxRounds: 5, status: "in-progress" }`
+3. 递增 `consensusTracker.currentRound`
+4. 在 `consensusTracker.rounds` 末尾追加本轮数据：`{ round: N, fatalIssues: 数量, highIssues: 数量, mediumIssues: 数量, lowIssues: 数量, status: "consensus-not-reached"|"consensus-reached", reqAdjustments: 数量, designAdjustments: 数量 }`
+5. 共识达成时：设置 `consensusTracker.status` 为 "consensus-reached"，本轮 `status` 为 "consensus-reached"，`overallStatus` 改回 "in-progress"
+6. 达到最大轮次仍未达成：设置 `consensusTracker.status` 为 "escalated"
+7. 追加活动日志：`{ timestamp, phase: 3, action: "review-round", message: "第N轮: X致命, Y高优先级问题", level: "info"|"warning"|"success" }`
+8. 写回文件
+
+### TDD 闭环更新（阶段六~七）
+
+在 TDD 闭环中，每轮测试验证后更新状态：
+
+1. 设置 `overallStatus` 为 "tdd-loop"
+2. 如果 `bugTracker` 为 null，初始化：`{ rounds: [], currentRound: 0, maxRounds: 3, status: "in-progress" }`
+3. 递增 `bugTracker.currentRound`
+4. 在 `bugTracker.rounds` 末尾追加本轮数据：`{ round: N, newBugs: 数量, fixedBugs: 数量, remainingBugs: 数量, iterationId: "iter-N" }`
+5. Bug 为0且连续3轮无新Bug：设置 `bugTracker.status` 为 "stable"
+6. 3轮不收敛：设置 `bugTracker.status` 为 "escalated"
+7. 测试全部通过：设置 `overallStatus` 回 "in-progress"，`bugTracker.status` 为 "converging"
+8. 追加活动日志：`{ timestamp, phase: 7, action: "test-round", message: "第N轮: X新Bug, Y已修复, Z剩余", level: "info"|"success"|"error" }`
+9. 写回文件
+
+### 工作流完成
+
+1. 设置 `overallStatus` 为 "completed"
+2. 设置 `completedAt` 为当前时间
+3. 追加活动日志：`{ timestamp, phase: currentPhase, action: "workflow-completed", message: "工作流完成", level: "success" }`
+4. 写回文件
+5. **询问用户**是否关闭仪表盘。如果用户选择保留，仪表盘继续运行供回顾。如果选择关闭，运行 `kill $(cat .dws/{项目名}/.dashboard.pid)`（macOS/Linux）或停止对应进程（Windows）。
+
+### 活动日志管理
+
+- activityLog 最多保留 200 条记录。追加新记录后，如果总数超过 200，删除最旧的记录。
+- 每条记录包含：timestamp（ISO时间戳）、phase（0-7）、action（动作标识）、message（人类可读描述）、level（info/warning/error/success）
+
+### 制品记录
+
+每个阶段完成后，将产出的文件记录到 `phases[N].artifacts` 数组中。每条记录包含：
+- `name`：文件显示名
+- `path`：相对于项目根目录的路径（如 `.dws/{项目名}/req/requirements.md`）
+- `type`：文件类型（`markdown`|`html`|`image`|`json`|`other`）
+- `generatedAt`：生成时间（ISO时间戳）
+
+### 容错
+
+- 如果 `workflow-state.json` 不存在（单独使用子技能时），跳过所有状态更新，不影响工作流正常执行
+- 如果写入失败，记录警告但不中断工作流
+- 状态更新与工作流执行解耦——状态更新是辅助性的，不是关键路径
+
 ## 异常处理
 
 **需求在流程中途变更：**

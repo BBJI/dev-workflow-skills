@@ -684,6 +684,47 @@ flowchart TD
 - **装饰性动画**：动画必须有目的——空间连续性、状态变化反馈、引导注意力。如果没有，删掉它。
 - **事后补无障碍**：如果你最后才加无障碍，你已经失败了。从步骤一开始就要设计无障碍。
 
+## Dashboard 状态更新
+
+当本技能在 workflow-skill 编排下运行时，`.dws/{项目名}/workflow-state.json` 存在。此时需在每个步骤的开始和完成时更新状态文件，使仪表盘能实时反映进度。
+
+**如果 `workflow-state.json` 不存在，跳过本节所有操作，不影响技能正常执行。**
+
+### 阶段映射
+
+本技能对应阶段 ID = 2。
+
+### 步骤映射
+
+| 步骤 | 状态文件步骤 ID |
+|------|----------------|
+| 步骤一：理解需求 | `design-step-1` |
+| 步骤二：定义信息架构 | `design-step-2` |
+| 步骤三：梳理用户流程 | `design-step-3` |
+| 步骤四：定义设计令牌 | `design-step-4` |
+| 步骤五：规格化组件 | `design-step-5` |
+| 步骤六：设计页面/屏幕 | `design-step-6` |
+| 步骤七：定义交互模式 | `design-step-7` |
+| 步骤八：验证无障碍 | `design-step-8` |
+
+### 更新规则
+
+**步骤开始时**：
+1. 读取 `.dws/{项目名}/workflow-state.json`
+2. 找到 `phases[2].steps` 中对应步骤 ID 的条目
+3. 设置 `status` 为 "in-progress"，`startedAt` 为当前 ISO 时间戳
+4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 2, action: "step-started", message: "{步骤名}", level: "info" }`
+5. 更新 `updatedAt`，写回文件
+
+**步骤完成时**：
+1. 读取 `.dws/{项目名}/workflow-state.json`
+2. 找到对应步骤，设置 `status` 为 "completed"，`completedAt` 为当前 ISO 时间戳
+3. 将本步骤产出的文件添加到 `phases[2].artifacts` 数组（设计规范、用户流程、页面规格、设计稿 HTML、交互说明 HTML 等）
+4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 2, action: "step-completed", message: "{步骤名}", level: "success" }`
+5. 更新 `updatedAt`，写回文件
+
+**activityLog 超过 200 条时**，删除最旧的条目。
+
 ## 参考资料
 
 当项目有特定法规要求（WCAG、Section 508、欧盟无障碍标准）时，阅读 `references/accessibility-compliance.md`。

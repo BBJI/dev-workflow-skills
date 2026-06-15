@@ -437,3 +437,58 @@ Bug修复后验证：
 - **测试规格而非产品**：如果规格是错的，产品会匹配规格但仍然是错的。单独标记规格问题。
 - **修复后不测试**：引入新Bug的修复比原始Bug更糟糕。
 - **严重程度膨胀**：不是每个Bug都是致命的。诚实使用严重程度评级，让团队有效优先排序。
+
+## Dashboard 状态更新
+
+当本技能在 workflow-skill 编排下运行时，`.dws/{项目名}/workflow-state.json` 存在。此时需在每个步骤的开始和完成时更新状态文件，使仪表盘能实时反映进度。
+
+**如果 `workflow-state.json` 不存在，跳过本节所有操作，不影响技能正常执行。**
+
+### 阶段映射
+
+本技能在两个阶段使用：
+- **测试用例编写模式**对应阶段 ID = 5
+- **测试验证模式**对应阶段 ID = 7
+
+### 步骤映射 — 测试用例编写模式（阶段5）
+
+| 步骤 | 状态文件步骤 ID |
+|------|----------------|
+| 步骤一：梳理测试范围 | `test-write-step-1` |
+| 步骤二：编写功能测试用例 | `test-write-step-2` |
+| 步骤三：编写非功能测试用例 | `test-write-step-3` |
+| 步骤四：编写无障碍测试用例 | `test-write-step-4` |
+| 步骤五：编写视觉一致性测试用例 | `test-write-step-5` |
+| 步骤六：汇总测试用例文档 | `test-write-step-6` |
+
+### 步骤映射 — 测试验证模式（阶段7）
+
+| 步骤 | 状态文件步骤 ID |
+|------|----------------|
+| 步骤一：测试计划 | `test-verify-step-1` |
+| 步骤二：功能测试 | `test-verify-step-2` |
+| 步骤三：非功能测试 | `test-verify-step-3` |
+| 步骤四：视觉/设计一致性测试 | `test-verify-step-4` |
+| 步骤五：回归测试 | `test-verify-step-5` |
+| 步骤六：Bug报告 | `test-verify-step-6` |
+| 步骤七：测试总结报告 | `test-verify-step-7` |
+
+### 更新规则
+
+**步骤开始时**：
+1. 读取 `.dws/{项目名}/workflow-state.json`
+2. 根据当前模式，找到 `phases[5]` 或 `phases[7]` 的 `steps` 中对应步骤 ID 的条目
+3. 设置 `status` 为 "in-progress"，`startedAt` 为当前 ISO 时间戳
+4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 当前阶段ID, action: "step-started", message: "{步骤名}", level: "info" }`
+5. 更新 `updatedAt`，写回文件
+
+**步骤完成时**：
+1. 读取 `.dws/{项目名}/workflow-state.json`
+2. 找到对应步骤，设置 `status` 为 "completed"，`completedAt` 为当前 ISO 时间戳
+3. 将本步骤产出的文件添加到对应阶段的 `artifacts` 数组
+4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 当前阶段ID, action: "step-completed", message: "{步骤名}", level: "success" }`
+5. 更新 `updatedAt`，写回文件
+
+**测试验证模式特殊**：步骤六（Bug报告）完成时，如果发现了 Bug，追加活动日志：`{ timestamp, phase: 7, action: "bugs-found", message: "发现 X 个Bug（Y致命/Z高）", level: "warning" }`
+
+**activityLog 超过 200 条时**，删除最旧的条目。

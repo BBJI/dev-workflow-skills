@@ -195,6 +195,15 @@ if ($Uninstall) {
 
     $cacheDir = Join-Path $CLAUDE_DIR "plugins\cache\$PLUGIN_NAME"
     $marketDir = Join-Path $CLAUDE_DIR "plugins\marketplaces\$PLUGIN_NAME"
+
+    # Kill any running dashboard processes
+    Get-ChildItem -Path $cacheDir -Filter ".dashboard.pid" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+        $pid = Get-Content $_.FullName -ErrorAction SilentlyContinue
+        if ($pid) {
+            try { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue } catch {}
+        }
+    }
+
     if (Test-Path $cacheDir) { Remove-Item $cacheDir -Recurse -Force }
     if (Test-Path $marketDir) { Remove-Item $marketDir -Recurse -Force }
     Write-Host "  [OK] 缓存已清理" -ForegroundColor Green
@@ -243,6 +252,25 @@ if ($Claude) {
         # 复制插件文件到 cache
         Copy-Item (Join-Path $marketDir ".claude-plugin") $cacheDir -Recurse
         Copy-Item (Join-Path $marketDir "skills") $cacheDir -Recurse
+
+        # Install dashboard dependencies
+        $dashboardDir = Join-Path $cacheDir "skills\workflow-skill\dashboard"
+        if ((Test-Path $dashboardDir) -and (Test-Path (Join-Path $dashboardDir "package.json"))) {
+            Write-Host "  Installing dashboard dependencies..." -ForegroundColor Gray
+            Push-Location $dashboardDir
+            try {
+                & npm install --production 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "  [OK] Dashboard dependencies installed" -ForegroundColor Green
+                } else {
+                    Write-Host "  [WARN] Dashboard dependencies installation failed" -ForegroundColor Yellow
+                    Write-Host "         You can install manually: cd $dashboardDir && npm install" -ForegroundColor Yellow
+                }
+            } catch {
+                Write-Host "  [WARN] Dashboard dependencies installation failed" -ForegroundColor Yellow
+            }
+            Pop-Location
+        }
         Copy-Item (Join-Path $marketDir "commands") $cacheDir -Recurse
         Copy-Item (Join-Path $marketDir "codex") $cacheDir -Recurse -ErrorAction SilentlyContinue
         if (Test-Path (Join-Path $marketDir "README.md")) {
