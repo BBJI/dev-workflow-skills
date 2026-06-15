@@ -229,23 +229,26 @@ if ($Claude) {
 
         # 克隆/更新 marketplace
         $marketDir = Join-Path $CLAUDE_DIR "plugins\marketplaces\$PLUGIN_NAME"
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
         if (Test-Path $marketDir) {
             # 检查是否是有效的 git 仓库
             $isGitRepo = Test-Path (Join-Path $marketDir ".git")
             if ($isGitRepo) {
                 Write-Host "  更新 marketplace..." -ForegroundColor Gray
                 Push-Location $marketDir
-                git pull --ff-only 2>&1 | Write-Host
+                git pull --ff-only 2>&1 | ForEach-Object { Write-Host $_ }
                 Pop-Location
             } else {
                 Write-Host "  marketplace 目录损坏，重新克隆..." -ForegroundColor Yellow
                 Remove-Item $marketDir -Recurse -Force -ErrorAction SilentlyContinue
-                & git clone --depth 1 $REPO_URL $marketDir 2>&1 | Write-Host
+                & git clone --depth 1 $REPO_URL $marketDir 2>&1 | ForEach-Object { Write-Host $_ }
             }
         } else {
             Write-Host "  克隆仓库到 marketplace..." -ForegroundColor Gray
-            & git clone --depth 1 $REPO_URL $marketDir 2>&1 | Write-Host
+            & git clone --depth 1 $REPO_URL $marketDir 2>&1 | ForEach-Object { Write-Host $_ }
         }
+        $ErrorActionPreference = $prevEAP
 
         # 等待目录出现（git clone 可能在后台执行）
         $waitCount = 0
@@ -286,7 +289,7 @@ if ($Claude) {
         if ((Test-Path $dashboardDir) -and (Test-Path (Join-Path $dashboardDir "package.json"))) {
             Write-Host "  Installing dashboard dependencies..." -ForegroundColor Gray
             Push-Location $dashboardDir
-            & npm install --production 2>&1 | Write-Host
+            & npm install --production 2>&1 | ForEach-Object { Write-Host $_ }
             if (Test-Path (Join-Path $dashboardDir "node_modules")) {
                 Write-Host "  [OK] Dashboard dependencies installed" -ForegroundColor Green
             } else {
