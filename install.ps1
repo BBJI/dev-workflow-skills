@@ -239,7 +239,8 @@ if ($Claude) {
         # 获取 commit sha 和版本号
         Push-Location $marketDir
         $gitSha = git rev-parse --short HEAD
-        $version = (Get-Content (Join-Path $marketDir ".claude-plugin\plugin.json") -Encoding utf8 | ConvertFrom-Json).version
+        $pluginJsonPath = Join-Path $marketDir ".claude-plugin\plugin.json"
+        $version = ([System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($pluginJsonPath)) | ConvertFrom-Json).version
         Pop-Location
 
         # 创建 cache 目录结构
