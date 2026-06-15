@@ -227,23 +227,31 @@ if ($Claude) {
         # 克隆/更新 marketplace
         $marketDir = Join-Path $CLAUDE_DIR "plugins\marketplaces\$PLUGIN_NAME"
         if (Test-Path $marketDir) {
-            Write-Host "  更新 marketplace..." -ForegroundColor Gray
-            Push-Location $marketDir
-            try { git pull --ff-only } catch {
-                Write-Host "  [WARN] git pull 失败，尝试重新克隆..." -ForegroundColor Yellow
+            # 检查是否是有效的 git 仓库
+            $isGitRepo = Test-Path (Join-Path $marketDir ".git")
+            if ($isGitRepo) {
+                Write-Host "  更新 marketplace..." -ForegroundColor Gray
+                Push-Location $marketDir
+                git pull --ff-only 2>&1 | Write-Host
                 Pop-Location
+            } else {
+                Write-Host "  marketplace 目录损坏，重新克隆..." -ForegroundColor Yellow
                 Remove-Item $marketDir -Recurse -Force -ErrorAction SilentlyContinue
-                git clone --depth 1 $REPO_URL $marketDir
+                $cloneOutput = git clone --depth 1 $REPO_URL $marketDir 2>&1
+                Write-Host $cloneOutput
             }
-            if (Test-Path $marketDir) { Pop-Location }
         } else {
             Write-Host "  克隆仓库到 marketplace..." -ForegroundColor Gray
-            git clone --depth 1 $REPO_URL $marketDir
+            $cloneOutput = git clone --depth 1 $REPO_URL $marketDir 2>&1
+            Write-Host $cloneOutput
         }
 
         if (-not (Test-Path $marketDir)) {
-            Write-Host "  [ERROR] 克隆仓库失败，请检查网络连接和 git 是否可用" -ForegroundColor Red
-            Write-Host "  提示: 确认 git 在 PATH 中，且能访问 $REPO_URL" -ForegroundColor Yellow
+            Write-Host "  [ERROR] 克隆仓库失败" -ForegroundColor Red
+            Write-Host "  请检查:" -ForegroundColor Yellow
+            Write-Host "    1. git 是否在 PATH 中 (运行 git --version 验证)" -ForegroundColor Yellow
+            Write-Host "    2. 网络是否能访问 $REPO_URL" -ForegroundColor Yellow
+            Write-Host "    3. 目录 $marketDir 是否被其他进程占用" -ForegroundColor Yellow
             return
         }
 
