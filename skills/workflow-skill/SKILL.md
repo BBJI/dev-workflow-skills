@@ -584,6 +584,62 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 **重要**：在每个检查点暂停时，如果仪表盘正在运行，必须附加一行提示 Dashboard 地址（如 `📊 Dashboard: http://localhost:3456`），方便用户打开查看实时进度。
 
+### Dashboard 问答模式
+
+当仪表盘正在运行时，检查点暂停可采用 **Dashboard 问答模式** 替代或补充 `AskUserQuestion`：
+
+**写入问题**：在检查点暂停时，将问题数据写入 `workflow-state.json` 的 `pendingQuestion` 字段：
+
+```json
+{
+  "pendingQuestion": {
+    "id": "q-{NNN}",
+    "question": "问题文本",
+    "header": "CC 需要你的决策",
+    "multiSelect": false,
+    "options": [
+      {"value": "option1", "label": "选项标签", "description": "选项描述"},
+      {"value": "option2", "label": "选项标签", "description": "选项描述"}
+    ],
+    "allowCustom": true,
+    "status": "pending",
+    "answer": null,
+    "createdAt": "ISO时间戳"
+  }
+}
+```
+
+**轮询答案**：写入问题后，使用 Bash 轮询 `workflow-state.json` 检测答案：
+
+```bash
+# 轮询脚本模板
+STATE_FILE=".dws/{项目名}/workflow-state.json"
+TIMEOUT=1800  # 30分钟
+ELAPSED=0
+while [ $ELAPSED -lt $TIMEOUT ]; do
+  STATUS=$(node -e "try{const s=JSON.parse(require('fs').readFileSync('$STATE_FILE','utf-8'));console.log(s.pendingQuestion?.status||'none')}catch{console.log('none')}")
+  if [ "$STATUS" = "answered" ]; then
+    ANSWER=$(node -e "const s=JSON.parse(require('fs').readFileSync('$STATE_FILE','utf-8'));console.log(JSON.stringify(s.pendingQuestion.answer))")
+    echo "ANSWER_RECEIVED: $ANSWER"
+    break
+  fi
+  sleep 3
+  ELAPSED=$((ELAPSED + 3))
+done
+if [ $ELAPSED -ge $TIMEOUT ]; then
+  echo "ANSWER_TIMEOUT"
+fi
+```
+
+**双通道策略**：Dashboard 问答和 `AskUserQuestion` 可同时使用：
+1. **Dashboard 优先**：先写入 `pendingQuestion`，启动轮询。同时使用 `AskUserQuestion` 在 CLI 中提问。
+2. **先到先得**：哪个渠道先收到回答就使用哪个。如果 Dashboard 先收到答案，`AskUserQuestion` 会被用户跳过；如果 CLI 先收到，Dashboard 侧的问题需标记为已回答。
+3. **超时回退**：如果轮询超时（30 分钟无 Dashboard 回答），仅依赖 `AskUserQuestion` 的结果。
+
+**读取答案后清理**：CC 读取答案后，将 `pendingQuestion` 设为 `null`，使 Dashboard 中的问题面板消失。
+
+**问题 ID 规则**：`q-{NNN}`，NNN 为递增编号，每次工作流运行从 001 开始。
+
 ## 输出
 
 工作流产出完整的交付物集：

@@ -245,6 +245,47 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .empty-state .spinner{width:40px;height:40px;border:3px solid var(--c-border);border-top-color:var(--c-primary);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* Question panel */
+.question-panel{background:rgba(79,140,255,.08);border:2px solid var(--c-primary);border-radius:var(--radius);padding:20px;margin-bottom:20px;animation:questionSlideIn .4s ease-out,questionGlow 2s ease-in-out infinite}
+.question-panel.answered{border-color:var(--c-success);animation:none;background:rgba(52,211,153,.08)}
+@keyframes questionSlideIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
+@keyframes questionGlow{0%,100%{box-shadow:0 0 0 0 rgba(79,140,255,.3)}50%{box-shadow:0 0 20px 4px rgba(79,140,255,.2)}}
+.question-header{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.question-icon{width:24px;height:24px;border-radius:50%;background:var(--c-primary);display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;font-weight:600;flex-shrink:0}
+.question-panel.answered .question-icon{background:var(--c-success)}
+.question-title{font-size:15px;font-weight:600;color:var(--c-primary)}
+.question-panel.answered .question-title{color:var(--c-success)}
+.answered-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:12px;font-size:12px;background:rgba(52,211,153,.15);color:var(--c-success);margin-left:8px}
+.question-text{font-size:14px;margin-bottom:16px;line-height:1.6}
+.question-panel.answered .question-text{text-decoration:line-through;opacity:.6}
+.answered-time{font-size:12px;color:var(--c-text2);margin-top:8px}
+.q-option-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.q-option{padding:10px 14px;border-radius:6px;border:1px solid var(--c-border);background:var(--c-surface2);cursor:pointer;transition:all .2s;font-size:13px;display:flex;align-items:flex-start;gap:10px}
+.q-option:hover{border-color:var(--c-primary);background:rgba(79,140,255,.05)}
+.q-option.selected{border-color:var(--c-primary);background:rgba(79,140,255,.15)}
+.q-option-radio{width:16px;height:16px;border:2px solid var(--c-border);border-radius:50%;flex-shrink:0;margin-top:1px;position:relative;transition:border-color .2s}
+.q-option.selected .q-option-radio{border-color:var(--c-primary)}
+.q-option.selected .q-option-radio::after{content:'';position:absolute;top:3px;left:3px;width:6px;height:6px;border-radius:50%;background:var(--c-primary)}
+.q-option-checkbox{width:16px;height:16px;border:2px solid var(--c-border);border-radius:3px;flex-shrink:0;margin-top:1px;position:relative;transition:all .2s}
+.q-option.selected .q-option-checkbox{border-color:var(--c-primary);background:var(--c-primary)}
+.q-option.selected .q-option-checkbox::after{content:'✓';position:absolute;top:-2px;left:2px;font-size:12px;color:#fff;font-weight:700}
+.q-option-content{flex:1}
+.q-option-label{font-weight:500;margin-bottom:2px}
+.q-option-desc{font-size:12px;color:var(--c-text2)}
+.q-other-input{margin-bottom:16px;padding:8px 12px;border-radius:6px;border:1px solid var(--c-border);background:var(--c-surface2);color:var(--c-text);font-size:13px;width:100%;outline:none;font-family:inherit}
+.q-other-input:focus{border-color:var(--c-primary)}
+.q-other-input::placeholder{color:var(--c-text2)}
+.question-actions{display:flex;align-items:center;gap:12px}
+.q-submit-btn{padding:8px 24px;border-radius:6px;background:var(--c-primary);color:#fff;border:none;font-size:14px;cursor:pointer;transition:opacity .2s;font-family:inherit}
+.q-submit-btn:hover{opacity:.85}
+.q-submit-btn:disabled{opacity:.4;cursor:not-allowed}
+.q-submit-hint{font-size:11px;color:var(--c-text2)}
+
+/* Notification indicator in header */
+.notif-indicator{cursor:pointer;position:relative;display:none}
+.notif-dot{width:10px;height:10px;border-radius:50%;background:var(--c-warning);animation:notifBlink 1s infinite;display:inline-block}
+@keyframes notifBlink{50%{opacity:.3}}
+
 /* Responsive */
 @media(max-width:1024px){
   .main{flex-direction:column}
@@ -264,6 +305,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <span class="conn-dot disconnected" id="connDot"></span>
   <span class="phase-label" id="phaseLabel">Connecting...</span>
   <span style="margin-left:auto;font-size:12px;color:var(--c-text2)">
+    <span class="notif-indicator" id="notifIndicator" title="有待回答的问题">
+      <span class="notif-dot"></span>
+    </span>
     <a id="dashboardUrlLink" href="" target="_blank" style="color:var(--c-primary);text-decoration:none;margin-right:12px;display:none">&#128279; 分享链接</a>
     更新: <span id="lastRefresh">--:--:--</span>
   </span>
@@ -330,6 +374,8 @@ let reconnectDelay = 1000;
 let expandedSteps = new Set();
 let expandedLogs = new Set();
 let expandedTrackerRounds = new Set();
+let selectedOptions = new Set();
+let notificationPermissionRequested = false;
 
 // ── SSE Connection ──────────────────────────────────
 let sseEventCount = 0;
@@ -416,6 +462,7 @@ function renderState(state) {
   renderTimeline(state);
   renderPhaseDetail(state);
   renderSidePanel(state);
+  handleQuestionNotification(state);
 }
 
 function renderTimeline(state) {
@@ -454,7 +501,14 @@ function renderPhaseDetail(state) {
     return;
   }
 
-  let html = `<div class="phase-detail">
+  let html = '';
+
+  // Question panel (only on current phase view)
+  if (state.pendingQuestion && phaseId === state.currentPhase) {
+    html += renderQuestionPanel(state.pendingQuestion);
+  }
+
+  html += `<div class="phase-detail">
     <h2>${PHASES[phase.id]?.fullName || phase.name}</h2>
     <div class="phase-meta">${phase.skill} &middot; ${statusLabel(phase.status)}`;
   if (phase.startedAt) html += ` &middot; 开始: ${fmtTime(phase.startedAt)}`;
@@ -682,11 +736,12 @@ function renderSidePanel(state) {
   logs.forEach((entry, idx) => {
     const logKey = `log-${idx}`;
     const isExpanded = expandedLogs.has(logKey);
+    const isQA = entry.action === 'question-answered';
     html += `<div class="log-entry" onclick="toggleLog('${logKey}')">
       <span class="log-level ${entry.level || 'info'}"></span>
       <span class="log-time">${fmtTime(entry.timestamp)}</span>
-      <span class="log-phase">${entry.phase}</span>
-      <span class="log-msg">${entry.message}</span>
+      <span class="log-phase">${isQA ? '💬' : entry.phase}</span>
+      <span class="log-msg">${isQA ? '💬 ' : ''}${escHtml(entry.message)}</span>
     </div>`;
     html += `<div class="log-detail-panel${isExpanded ? ' open' : ''}" id="log-${logKey}">
       <div class="log-detail-action">${escHtml(entry.action || '')} &middot; 阶段 ${entry.phase}</div>
@@ -968,6 +1023,172 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ── Helpers ─────────────────────────────────────────
+
+// ── Question panel ──────────────────────────────────
+function renderQuestionPanel(q) {
+  if (!q) return '';
+  const isAnswered = q.status === 'answered';
+  const isPending = q.status === 'pending';
+
+  let html = `<div class="question-panel${isAnswered ? ' answered' : ''}" role="alert" aria-live="assertive">`;
+
+  if (isAnswered) {
+    html += `<div class="question-header">
+      <div class="question-icon">✓</div>
+      <span class="question-title">已回答</span>`;
+    if (q.answer) {
+      const labels = (q.options || [])
+        .filter(o => (q.answer.selectedValues || []).includes(o.value))
+        .map(o => o.label);
+      const answerText = labels.join(', ') + (q.answer.customText ? ' + 自定义' : '');
+      html += `<span class="answered-badge">${escHtml(answerText)}</span>`;
+    }
+    html += `</div>
+      <div class="question-text">${escHtml(q.question)}</div>`;
+    if (q.answer && q.answer.answeredAt) {
+      html += `<div class="answered-time">回答于 ${fmtTime(q.answer.answeredAt)} · 工作流将继续执行</div>`;
+    }
+    html += '</div>';
+    return html;
+  }
+
+  // Pending state
+  html += `<div class="question-header">
+    <div class="question-icon">?</div>
+    <span class="question-title">${escHtml(q.header || 'CC 需要你的决策')}</span>
+  </div>
+  <div class="question-text">${escHtml(q.question)}</div>`;
+
+  // Options
+  html += `<div class="q-option-list" role="${q.multiSelect ? 'group' : 'radiogroup'}" aria-label="选项">`;
+  (q.options || []).forEach(opt => {
+    const isSelected = selectedOptions.has(opt.value);
+    const indicatorClass = q.multiSelect ? 'q-option-checkbox' : 'q-option-radio';
+    html += `<div class="q-option${isSelected ? ' selected' : ''}" data-value="${escAttr(opt.value)}"
+      role="${q.multiSelect ? 'checkbox' : 'radio'}" aria-checked="${isSelected}" tabindex="0"
+      onclick="toggleQuestionOption('${escAttr(opt.value)}', ${!!q.multiSelect})"
+      onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleQuestionOption('${escAttr(opt.value)}', ${!!q.multiSelect})}">
+      <div class="${indicatorClass}"></div>
+      <div class="q-option-content">
+        <div class="q-option-label">${escHtml(opt.label)}</div>
+        ${opt.description ? `<div class="q-option-desc">${escHtml(opt.description)}</div>` : ''}
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+
+  // Custom input
+  if (q.allowCustom !== false) {
+    html += `<input class="q-other-input" id="questionCustomInput" placeholder="自定义回答..." />`;
+  }
+
+  // Actions
+  html += `<div class="question-actions">
+    <button class="q-submit-btn" id="questionSubmitBtn" onclick="submitQuestionAnswer('${escAttr(q.id)}')">提交回答</button>
+    <span class="q-submit-hint">或在 CLI 中回答</span>
+  </div>`;
+
+  html += '</div>';
+  return html;
+}
+
+function toggleQuestionOption(value, multiSelect) {
+  if (multiSelect) {
+    if (selectedOptions.has(value)) {
+      selectedOptions.delete(value);
+    } else {
+      selectedOptions.add(value);
+    }
+  } else {
+    selectedOptions.clear();
+    selectedOptions.add(value);
+  }
+  // Update DOM directly
+  document.querySelectorAll('.q-option').forEach(el => {
+    const v = el.getAttribute('data-value');
+    const isSelected = selectedOptions.has(v);
+    el.classList.toggle('selected', isSelected);
+    el.setAttribute('aria-checked', isSelected);
+  });
+}
+
+function submitQuestionAnswer(questionId) {
+  const btn = document.getElementById('questionSubmitBtn');
+  if (!btn) return;
+
+  if (selectedOptions.size === 0) {
+    btn.textContent = '请先选择一个选项';
+    setTimeout(() => { if (btn) btn.textContent = '提交回答'; }, 2000);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '提交中...';
+
+  const customInput = document.getElementById('questionCustomInput');
+  const customText = customInput ? customInput.value.trim() : '';
+
+  fetch('/api/question/answer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      questionId,
+      selectedValues: Array.from(selectedOptions),
+      customText
+    })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      if (btn) { btn.textContent = '已提交 ✓'; }
+    } else {
+      if (btn) { btn.textContent = data.error || '提交失败'; btn.disabled = false; }
+    }
+  })
+  .catch(err => {
+    if (btn) { btn.textContent = '网络错误，请重试'; btn.disabled = false; }
+    console.error('[DWS] Submit answer error:', err);
+  });
+}
+
+// ── Notification handling ───────────────────────────
+let prevPendingQuestion = null;
+function handleQuestionNotification(state) {
+  const q = state.pendingQuestion;
+  const indicator = document.getElementById('notifIndicator');
+
+  if (q && q.status === 'pending') {
+    // Show notification indicator
+    if (indicator) indicator.style.display = 'inline-block';
+    // Update tab title
+    if (!document.title.startsWith('[?]')) {
+      document.title = '[?] ' + document.title.replace(/^\[\?\]\s*/, '');
+    }
+    // Browser notification if tab not visible and question is new
+    if (prevPendingQuestion?.id !== q.id && document.hidden) {
+      if (notificationPermissionRequested && Notification.permission === 'granted') {
+        try {
+          new Notification('DWS Dashboard — 新问题', {
+            body: q.question,
+            tag: 'dws-question-' + q.id
+          });
+        } catch {}
+      }
+    }
+    // Request notification permission on first question
+    if (!notificationPermissionRequested && 'Notification' in window) {
+      notificationPermissionRequested = true;
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+    }
+  } else {
+    // No pending question
+    if (indicator) indicator.style.display = 'none';
+    document.title = document.title.replace(/^\[\?\]\s*/, '');
+  }
+  prevPendingQuestion = q;
+}
 function statusLabel(s) {
   const m = { pending: '待开始', 'in-progress': '进行中', completed: '已完成', blocked: '已阻塞', skipped: '已跳过' };
   return m[s] || s;

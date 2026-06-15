@@ -25,6 +25,8 @@ const PORT_FILE = join(DWS_DIR, '.dashboard.port');
 const app = express();
 const server = createServer(app);
 
+app.use(express.json());
+
 const clients = new Set();
 let currentState = null;
 let debounceTimer = null;
@@ -161,6 +163,52 @@ app.get('/api/state', (_req, res) => {
 // Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', project: PROJECT_NAME, uptime: process.uptime() });
+});
+
+// Question answer API
+app.post('/api/question/answer', (req, res) => {
+  const { questionId, selectedValues, customText } = req.body;
+  if (!questionId || !Array.isArray(selectedValues)) {
+    return res.status(400).json({ success: false, error: 'Missing questionId or selectedValues' });
+  }
+  const state = readStateFile();
+  if (!state || !state.pendingQuestion) {
+    return res.status(404).json({ success: false, error: 'Question not found' });
+  }
+  if (state.pendingQuestion.id !== questionId) {
+    return res.status(404).json({ success: false, error: 'Question not found' });
+  }
+  if (state.pendingQuestion.status === 'answered') {
+    return res.status(409).json({ success: false, error: 'Question already answered' });
+  }
+
+  state.pendingQuestion.status = 'answered';
+  state.pendingQuestion.answer = {
+    selectedValues,
+    customText: customText || '',
+    answeredAt: new Date().toISOString()
+  };
+  state.updatedAt = new Date().toISOString();
+
+  state.activityLog.push({
+    timestamp: new Date().toISOString(),
+    phase: state.currentPhase,
+    action: 'question-answered',
+    message: `回答: ${selectedValues.join(', ')}${customText ? ' + 自定义' : ''}`,
+    level: 'info'
+  });
+  if (state.activityLog.length > 200) {
+    state.activityLog = state.activityLog.slice(-200);
+  }
+
+  try {
+    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  } catch (e) {
+    return res.status(500).json({ success: false, error: 'Failed to write state' });
+  }
+  currentState = state;
+  broadcastState(state);
+  res.json({ success: true, answer: state.pendingQuestion.answer });
 });
 
 // SSE endpoint
