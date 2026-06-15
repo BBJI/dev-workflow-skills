@@ -69,9 +69,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .phase-detail .phase-meta{font-size:12px;color:var(--c-text2);margin-bottom:16px}
 
 /* Steps */
-.step-list{display:flex;flex-direction:column;gap:6px;margin-bottom:24px}
-.step-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius);background:var(--c-surface2);font-size:13px;transition:background .2s}
+.step-list{display:flex;flex-direction:column;gap:4px;margin-bottom:24px}
+.step-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius);background:var(--c-surface2);font-size:13px;cursor:pointer;transition:background .2s}
 .step-item:hover{background:var(--c-border)}
+.step-item.expanded{border-radius:var(--radius) var(--radius) 0 0;background:var(--c-border)}
 .step-icon{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
 .step-item.pending .step-icon{border:2px solid var(--c-pending);color:var(--c-text2)}
 .step-item.in-progress .step-icon{border:2px solid var(--c-primary);color:var(--c-primary);animation:pulse 2s infinite}
@@ -79,8 +80,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .step-item.blocked .step-icon{border:2px solid var(--c-danger);color:var(--c-danger)}
 .step-item.skipped .step-icon{border:2px solid var(--c-skipped);color:var(--c-text2)}
 .step-name{flex:1}
-.step-detail{font-size:11px;color:var(--c-text2)}
+.step-detail-inline{font-size:11px;color:var(--c-text2);max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .step-time{font-size:11px;color:var(--c-text2);white-space:nowrap}
+.step-expand{font-size:10px;color:var(--c-text2);transition:transform .2s}
+.step-item.expanded .step-expand{transform:rotate(90deg)}
+
+/* Step detail panel */
+.step-detail-panel{display:none;padding:12px 16px;background:var(--c-surface2);border-radius:0 0 var(--radius) var(--radius);margin-bottom:4px;font-size:13px;border-top:1px solid var(--c-border)}
+.step-detail-panel.open{display:block}
+.detail-section{margin-bottom:12px}
+.detail-section:last-child{margin-bottom:0}
+.detail-label{font-size:11px;color:var(--c-text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.detail-value{color:var(--c-text);line-height:1.6}
+.detail-value p{margin:4px 0}
+.detail-timing{display:flex;gap:16px;flex-wrap:wrap}
+.detail-timing-item{display:flex;flex-direction:column;gap:2px}
+.detail-timing-item .detail-label{margin-bottom:0}
+.detail-result{background:rgba(0,0,0,.2);border-radius:4px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;line-height:1.6}
+.detail-artifacts{display:flex;flex-wrap:wrap;gap:6px}
+.detail-artifact-link{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:4px;background:rgba(79,140,255,.1);color:var(--c-primary);font-size:12px;cursor:pointer;text-decoration:none;transition:background .2s}
+.detail-artifact-link:hover{background:rgba(79,140,255,.2)}
 
 /* Artifacts */
 .artifacts h3{font-size:14px;margin-bottom:10px;color:var(--c-text2)}
@@ -101,11 +120,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tracker-table th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--c-border);color:var(--c-text2);font-weight:500}
 .tracker-table td{padding:6px 8px;border-bottom:1px solid rgba(45,45,74,.5)}
 .tracker-table tr.current-round{background:rgba(79,140,255,.1)}
+.tracker-table tr.clickable{cursor:pointer;transition:background .15s}
+.tracker-table tr.clickable:hover{background:rgba(79,140,255,.08)}
 .bar-chart{display:flex;align-items:flex-end;gap:6px;height:60px;padding:4px 0;margin-bottom:8px}
 .bar{display:flex;flex-direction:column;justify-content:flex-end;min-width:28px;border-radius:3px 3px 0 0;transition:height .3s}
 .bar-fatal{background:var(--c-danger)}
 .bar-high{background:var(--c-warning)}
 .bar-label{font-size:10px;color:var(--c-text2);text-align:center}
+
+/* Tracker detail panel */
+.tracker-detail-panel{display:none;padding:10px 12px;background:rgba(0,0,0,.15);border-radius:var(--radius);margin-bottom:10px;font-size:12px;line-height:1.7}
+.tracker-detail-panel.open{display:block}
+.tracker-detail-panel .detail-section{margin-bottom:8px}
+.tracker-detail-panel .detail-section:last-child{margin-bottom:0}
+.tracker-detail-panel .detail-label{font-size:10px}
+.tracker-detail-panel .detail-value{font-size:12px}
+.issue-list{display:flex;flex-direction:column;gap:3px}
+.issue-item{display:flex;align-items:center;gap:6px;padding:3px 0}
+.issue-severity{font-size:10px;padding:1px 6px;border-radius:3px;font-weight:500}
+.issue-severity.fatal{background:rgba(248,113,113,.2);color:var(--c-danger)}
+.issue-severity.high{background:rgba(251,191,36,.2);color:var(--c-warning)}
+.issue-severity.medium{background:rgba(96,165,250,.2);color:var(--c-info)}
+.issue-severity.low{background:rgba(136,136,168,.2);color:var(--c-text2)}
 
 /* Bug tracker */
 .bug-bar-chart{display:flex;align-items:flex-end;gap:6px;height:60px;padding:4px 0;margin-bottom:8px}
@@ -116,17 +152,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* Activity log */
 .activity-log h3{font-size:14px;margin-bottom:10px}
 .log-list{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow-y:auto;font-size:12px}
-.log-entry{display:flex;gap:8px;padding:4px 8px;border-radius:4px;animation:fadeIn .3s}
+.log-entry{display:flex;gap:8px;padding:4px 8px;border-radius:4px;cursor:pointer;animation:fadeIn .3s;transition:background .15s}
 .log-entry:hover{background:var(--c-surface2)}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 .log-time{color:var(--c-text2);white-space:nowrap;font-family:monospace;font-size:11px}
 .log-phase{width:20px;text-align:center;flex-shrink:0;font-size:11px}
-.log-msg{flex:1;color:var(--c-text)}
+.log-msg{flex:1;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .log-level{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:6px}
 .log-level.info{background:var(--c-info)}
 .log-level.warning{background:var(--c-warning)}
 .log-level.error{background:var(--c-danger)}
 .log-level.success{background:var(--c-success)}
+
+/* Log detail panel */
+.log-detail-panel{display:none;padding:8px 12px;margin:2px 8px;background:var(--c-surface2);border-radius:4px;font-size:12px;line-height:1.6;border-left:3px solid var(--c-primary)}
+.log-detail-panel.open{display:block}
+.log-detail-panel .log-detail-action{color:var(--c-text2);font-size:11px;margin-bottom:4px}
+.log-detail-panel .log-detail-msg{color:var(--c-text);white-space:pre-wrap;word-break:break-word}
 
 /* Artifact preview modal */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:center;justify-content:center;padding:24px}
@@ -207,16 +249,19 @@ const PHASES = [
 ];
 
 const STEP_ICONS = {
-  pending: '○',     // ○
-  'in-progress': '◎', // ◎
-  completed: '✓',   // ✓
-  blocked: '✗',     // ✗
-  skipped: '—',     // —
+  pending: '○',
+  'in-progress': '◎',
+  completed: '✓',
+  blocked: '✗',
+  skipped: '—',
 };
 
 let prevState = null;
 let selectedPhase = null;
 let reconnectDelay = 1000;
+let expandedSteps = new Set();
+let expandedLogs = new Set();
+let expandedTrackerRounds = new Set();
 
 // ── SSE Connection ──────────────────────────────────
 let sseEventCount = 0;
@@ -327,6 +372,7 @@ function renderTimeline(state) {
 
 function selectPhase(id) {
   selectedPhase = id;
+  expandedSteps.clear();
   if (prevState) renderPhaseDetail(prevState);
 }
 
@@ -347,16 +393,50 @@ function renderPhaseDetail(state) {
   if (phase.completedAt) html += ` &middot; 完成: ${fmtTime(phase.completedAt)}`;
   html += '</div>';
 
-  // Steps
+  // Steps with expandable detail panels
   if (phase.steps && phase.steps.length > 0) {
     html += '<div class="step-list">';
     phase.steps.forEach(step => {
-      html += `<div class="step-item ${step.status}">
+      const isExpanded = expandedSteps.has(step.id);
+      const hasDetail = step.detail || step.result || step.startedAt;
+      html += `<div class="step-item ${step.status}${isExpanded ? ' expanded' : ''}" onclick="toggleStep('${step.id}')">
         <div class="step-icon">${STEP_ICONS[step.status] || ''}</div>
         <span class="step-name">${step.name}</span>
-        ${step.detail ? `<span class="step-detail">${step.detail}</span>` : ''}
+        ${step.detail ? `<span class="step-detail-inline">${escHtml(step.detail)}</span>` : ''}
         ${step.status !== 'pending' ? `<span class="step-time">${fmtDuration(step.startedAt, step.completedAt)}</span>` : ''}
+        ${hasDetail ? '<span class="step-expand">&#9654;</span>' : ''}
       </div>`;
+
+      // Detail panel
+      html += `<div class="step-detail-panel${isExpanded ? ' open' : ''}" id="detail-${step.id}">`;
+      // Timing
+      if (step.startedAt) {
+        html += '<div class="detail-section"><div class="detail-timing">';
+        html += `<div class="detail-timing-item"><div class="detail-label">开始</div><div class="detail-value">${fmtTimeFull(step.startedAt)}</div></div>`;
+        if (step.completedAt) {
+          html += `<div class="detail-timing-item"><div class="detail-label">完成</div><div class="detail-value">${fmtTimeFull(step.completedAt)}</div></div>`;
+          html += `<div class="detail-timing-item"><div class="detail-label">耗时</div><div class="detail-value">${fmtDuration(step.startedAt, step.completedAt)}</div></div>`;
+        }
+        html += '</div></div>';
+      }
+      // Detail text
+      if (step.detail) {
+        html += `<div class="detail-section"><div class="detail-label">描述</div><div class="detail-value">${escHtml(step.detail)}</div></div>`;
+      }
+      // Result content
+      if (step.result) {
+        html += `<div class="detail-section"><div class="detail-label">执行结果</div><div class="detail-result">${renderResultContent(step.result)}</div></div>`;
+      }
+      // Related artifacts from this phase
+      if (phase.artifacts && phase.artifacts.length > 0) {
+        html += '<div class="detail-section"><div class="detail-label">阶段产物</div><div class="detail-artifacts">';
+        phase.artifacts.forEach(a => {
+          const icon = a.type === 'html' ? '&#128196;' : a.type === 'markdown' ? '&#128221;' : '&#128206;';
+          html += `<a class="detail-artifact-link" onclick="event.stopPropagation();openArtifact('${escAttr(a.path)}','${a.type}','${escAttr(a.name)}')">${icon} ${a.name}</a>`;
+        });
+        html += '</div></div>';
+      }
+      html += '</div>';
     });
     html += '</div>';
   }
@@ -379,6 +459,54 @@ function renderPhaseDetail(state) {
   el.innerHTML = html;
 }
 
+function toggleStep(stepId) {
+  if (expandedSteps.has(stepId)) {
+    expandedSteps.delete(stepId);
+  } else {
+    expandedSteps.add(stepId);
+  }
+  // Toggle DOM directly for responsiveness
+  const item = document.querySelector(`.step-item[onclick*="${stepId}"]`);
+  const panel = document.getElementById(`detail-${stepId}`);
+  if (item && panel) {
+    item.classList.toggle('expanded');
+    panel.classList.toggle('open');
+  }
+}
+
+function renderResultContent(result) {
+  if (!result) return '';
+  // If result is a string, render as pre-wrapped text with basic markdown
+  if (typeof result === 'string') {
+    return escHtml(result);
+  }
+  // If result is an object with structured data
+  let html = '';
+  if (result.summary) {
+    html += `<p>${escHtml(result.summary)}</p>`;
+  }
+  if (result.items && Array.isArray(result.items)) {
+    html += '<ul style="margin:4px 0;padding-left:20px">';
+    result.items.forEach(item => {
+      html += `<li>${escHtml(typeof item === 'string' ? item : item.text || JSON.stringify(item))}</li>`;
+    });
+    html += '</ul>';
+  }
+  if (result.metrics && typeof result.metrics === 'object') {
+    html += '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:6px">';
+    Object.entries(result.metrics).forEach(([key, val]) => {
+      html += `<div style="background:rgba(0,0,0,.2);padding:4px 8px;border-radius:4px"><span style="color:var(--c-text2);font-size:11px">${escHtml(key)}</span> <strong>${escHtml(String(val))}</strong></div>`;
+    });
+    html += '</div>';
+  }
+  if (result.errors && Array.isArray(result.errors) && result.errors.length > 0) {
+    html += '<div style="margin-top:6px;color:var(--c-danger)">';
+    result.errors.forEach(err => { html += `<div>${escHtml(typeof err === 'string' ? err : err.message || JSON.stringify(err))}</div>`; });
+    html += '</div>';
+  }
+  return html || escHtml(JSON.stringify(result, null, 2));
+}
+
 function renderSidePanel(state) {
   const el = document.getElementById('panelSide');
   let html = '';
@@ -393,9 +521,36 @@ function renderSidePanel(state) {
     html += '<table class="tracker-table"><tr><th>轮次</th><th>致命</th><th>高</th><th>中</th><th>低</th><th>需求调整</th><th>设计调整</th></tr>';
     ct.rounds.forEach(r => {
       const isCurrent = r.round === ct.currentRound;
-      html += `<tr class="${isCurrent ? 'current-round' : ''}"><td>${r.round}</td><td>${r.fatalIssues}</td><td>${r.highIssues}</td><td>${r.mediumIssues || '-'}</td><td>${r.lowIssues || '-'}</td><td>${r.reqAdjustments}</td><td>${r.designAdjustments}</td></tr>`;
+      const roundKey = `consensus-${r.round}`;
+      const isExpanded = expandedTrackerRounds.has(roundKey);
+      html += `<tr class="clickable${isCurrent ? ' current-round' : ''}" onclick="toggleTrackerRound('${roundKey}')">
+        <td>${r.round}</td><td>${r.fatalIssues}</td><td>${r.highIssues}</td><td>${r.mediumIssues || '-'}</td><td>${r.lowIssues || '-'}</td><td>${r.reqAdjustments}</td><td>${r.designAdjustments}</td></tr>`;
     });
     html += '</table>';
+
+    // Expandable detail panels for each round
+    ct.rounds.forEach(r => {
+      const roundKey = `consensus-${r.round}`;
+      const isExpanded = expandedTrackerRounds.has(roundKey);
+      html += `<div class="tracker-detail-panel${isExpanded ? ' open' : ''}" id="tracker-${roundKey}">`;
+      html += `<div class="detail-section"><div class="detail-label">第 ${r.round} 轮状态</div><div class="detail-value">${r.status === 'consensus-reached' ? '✓ 共识达成' : '共识未达成'}</div></div>`;
+      // Issue breakdown
+      const total = (r.fatalIssues || 0) + (r.highIssues || 0) + (r.mediumIssues || 0) + (r.lowIssues || 0);
+      html += '<div class="detail-section"><div class="detail-label">问题分布</div><div class="issue-list">';
+      if (r.fatalIssues > 0) html += `<div class="issue-item"><span class="issue-severity fatal">致命</span> ${r.fatalIssues} 个</div>`;
+      if (r.highIssues > 0) html += `<div class="issue-item"><span class="issue-severity high">高</span> ${r.highIssues} 个</div>`;
+      if (r.mediumIssues > 0) html += `<div class="issue-item"><span class="issue-severity medium">中</span> ${r.mediumIssues} 个</div>`;
+      if (r.lowIssues > 0) html += `<div class="issue-item"><span class="issue-severity low">低</span> ${r.lowIssues} 个</div>`;
+      if (total === 0) html += '<div class="issue-item">无问题</div>';
+      html += '</div></div>';
+      // Adjustments
+      html += `<div class="detail-section"><div class="detail-label">调整</div><div class="detail-value">需求调整 ${r.reqAdjustments} 项，设计调整 ${r.designAdjustments} 项</div></div>`;
+      // Round-specific detail
+      if (r.details) {
+        html += `<div class="detail-section"><div class="detail-label">详情</div><div class="detail-result">${renderResultContent(r.details)}</div></div>`;
+      }
+      html += '</div>';
+    });
 
     // Bar chart
     const maxIssues = Math.max(...ct.rounds.map(r => r.fatalIssues + r.highIssues), 1);
@@ -419,9 +574,29 @@ function renderSidePanel(state) {
     html += '<table class="tracker-table"><tr><th>轮次</th><th>新增</th><th>已修复</th><th>剩余</th></tr>';
     bt.rounds.forEach(r => {
       const isCurrent = r.round === bt.currentRound;
-      html += `<tr class="${isCurrent ? 'current-round' : ''}"><td>${r.round}</td><td>${r.newBugs}</td><td>${r.fixedBugs}</td><td>${r.remainingBugs}</td></tr>`;
+      const roundKey = `bug-${r.round}`;
+      html += `<tr class="clickable${isCurrent ? ' current-round' : ''}" onclick="toggleTrackerRound('${roundKey}')">
+        <td>${r.round}</td><td>${r.newBugs}</td><td>${r.fixedBugs}</td><td>${r.remainingBugs}</td></tr>`;
     });
     html += '</table>';
+
+    // Expandable detail panels for each bug round
+    bt.rounds.forEach(r => {
+      const roundKey = `bug-${r.round}`;
+      const isExpanded = expandedTrackerRounds.has(roundKey);
+      html += `<div class="tracker-detail-panel${isExpanded ? ' open' : ''}" id="tracker-${roundKey}">`;
+      html += `<div class="detail-section"><div class="detail-label">第 ${r.round} 轮 (迭代 ${r.iterationId || '-'})</div></div>`;
+      html += '<div class="detail-section"><div class="detail-label">Bug 分布</div><div class="issue-list">';
+      if (r.newBugs > 0) html += `<div class="issue-item"><span class="issue-severity high">新增</span> ${r.newBugs} 个</div>`;
+      if (r.fixedBugs > 0) html += `<div class="issue-item"><span class="issue-severity medium">已修复</span> ${r.fixedBugs} 个</div>`;
+      if (r.remainingBugs > 0) html += `<div class="issue-item"><span class="issue-severity fatal">剩余</span> ${r.remainingBugs} 个</div>`;
+      if (r.newBugs === 0 && r.remainingBugs === 0) html += '<div class="issue-item">无 Bug</div>';
+      html += '</div></div>';
+      if (r.details) {
+        html += `<div class="detail-section"><div class="detail-label">详情</div><div class="detail-result">${renderResultContent(r.details)}</div></div>`;
+      }
+      html += '</div>';
+    });
 
     const maxBugs = Math.max(...bt.rounds.map(r => r.newBugs + r.remainingBugs), 1);
     html += '<div class="bug-bar-chart">';
@@ -436,12 +611,18 @@ function renderSidePanel(state) {
   // Activity log
   html += '<div class="activity-log"><h3>Activity Log</h3><div class="log-list" id="logList">';
   const logs = (state.activityLog || []).slice(-50);
-  logs.forEach(entry => {
-    html += `<div class="log-entry">
+  logs.forEach((entry, idx) => {
+    const logKey = `log-${idx}`;
+    const isExpanded = expandedLogs.has(logKey);
+    html += `<div class="log-entry" onclick="toggleLog('${logKey}')">
       <span class="log-level ${entry.level || 'info'}"></span>
       <span class="log-time">${fmtTime(entry.timestamp)}</span>
       <span class="log-phase">${entry.phase}</span>
       <span class="log-msg">${entry.message}</span>
+    </div>`;
+    html += `<div class="log-detail-panel${isExpanded ? ' open' : ''}" id="log-${logKey}">
+      <div class="log-detail-action">${escHtml(entry.action || '')} &middot; 阶段 ${entry.phase}</div>
+      <div class="log-detail-msg">${escHtml(entry.message)}</div>
     </div>`;
   });
   html += '</div></div>';
@@ -451,6 +632,26 @@ function renderSidePanel(state) {
   // Auto-scroll log
   const logList = document.getElementById('logList');
   if (logList) logList.scrollTop = logList.scrollHeight;
+}
+
+function toggleTrackerRound(roundKey) {
+  if (expandedTrackerRounds.has(roundKey)) {
+    expandedTrackerRounds.delete(roundKey);
+  } else {
+    expandedTrackerRounds.add(roundKey);
+  }
+  const panel = document.getElementById(`tracker-${roundKey}`);
+  if (panel) panel.classList.toggle('open');
+}
+
+function toggleLog(logKey) {
+  if (expandedLogs.has(logKey)) {
+    expandedLogs.delete(logKey);
+  } else {
+    expandedLogs.add(logKey);
+  }
+  const panel = document.getElementById(`log-${logKey}`);
+  if (panel) panel.classList.toggle('open');
 }
 
 // ── Artifact preview ────────────────────────────────
@@ -498,6 +699,14 @@ function fmtTime(iso) {
   } catch { return ''; }
 }
 
+function fmtTimeFull(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch { return ''; }
+}
+
 function fmtDuration(start, end) {
   if (!start) return '';
   try {
@@ -512,6 +721,11 @@ function fmtDuration(start, end) {
     const hr = Math.floor(min / 60);
     return hr + 'h ' + (min % 60) + 'm';
   } catch { return ''; }
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function escAttr(s) {

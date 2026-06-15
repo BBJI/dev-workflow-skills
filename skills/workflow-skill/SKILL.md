@@ -435,6 +435,25 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 各阶段的 steps 列表（初始化时写入，执行时更新 status）：
 
+每个 step 的完整结构：
+```json
+{
+  "id": "step-id",
+  "name": "步骤名称",
+  "status": "pending|in-progress|completed|blocked|skipped",
+  "startedAt": null,
+  "completedAt": null,
+  "detail": "简要描述（单行，用于步骤列表内联显示）",
+  "result": "步骤执行结果的详细内容（支持纯文本或结构化JSON，在Dashboard中点击步骤可展开查看）"
+}
+```
+
+**`result` 字段说明**：记录步骤执行的详细结果，供用户在 Dashboard 中点击查看。可以是：
+- 纯文本字符串：简要描述本步骤的产出和关键数据
+- 结构化 JSON 对象：`{ "summary": "概述", "items": ["条目1", "条目2"], "metrics": { "需求数": 15, "NFR数": 8 }, "errors": ["错误信息"] }`
+
+**重要**：每个步骤完成时，**必须**填写 `result` 字段，确保用户在 Dashboard 中点击步骤能看到有意义的执行详情。
+
 | 阶段 | 步骤 |
 |------|------|
 | 0-项目规范 | instruct-step-1~5: 确定项目类型/收集信息/编写源文档/派生格式/验证输出 |
@@ -465,10 +484,11 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 2. 设置 `phases[N].status` 为 "completed"
 3. 设置 `phases[N].completedAt` 为当前 ISO 时间戳
 4. 将阶段内所有未完成的步骤 status 设为 "completed"
-5. 更新 `phases[N].artifacts` 为本阶段产出的所有制品
-6. 更新 `updatedAt`
-7. 在 `activityLog` 末尾追加：`{ timestamp, phase: N, action: "phase-completed", message: "完成{阶段名}", level: "success" }`
-8. 写回文件
+5. 为每个已完成的步骤填写 `result` 字段，记录步骤执行的详细结果（如产出数量、关键决策、发现的问题等），确保用户在 Dashboard 中点击可看到有意义的详情
+6. 更新 `phases[N].artifacts` 为本阶段产出的所有制品
+7. 更新 `updatedAt`
+8. 在 `activityLog` 末尾追加：`{ timestamp, phase: N, action: "phase-completed", message: "完成{阶段名}", level: "success" }`
+9. 写回文件
 
 ### 共识闭环更新（阶段三）
 
@@ -477,7 +497,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 1. 设置 `overallStatus` 为 "consensus-loop"
 2. 如果 `consensusTracker` 为 null，初始化：`{ rounds: [], currentRound: 0, maxRounds: 5, status: "in-progress" }`
 3. 递增 `consensusTracker.currentRound`
-4. 在 `consensusTracker.rounds` 末尾追加本轮数据：`{ round: N, fatalIssues: 数量, highIssues: 数量, mediumIssues: 数量, lowIssues: 数量, status: "consensus-not-reached"|"consensus-reached", reqAdjustments: 数量, designAdjustments: 数量 }`
+4. 在 `consensusTracker.rounds` 末尾追加本轮数据：`{ round: N, fatalIssues: 数量, highIssues: 数量, mediumIssues: 数量, lowIssues: 数量, status: "consensus-not-reached"|"consensus-reached", reqAdjustments: 数量, designAdjustments: 数量, details: { summary: "本轮评审概述", items: ["具体问题1", "具体问题2"], metrics: { "覆盖需求%": "85%" } } }`（`details` 字段在 Dashboard 中点击轮次行可展开查看）
 5. 共识达成时：设置 `consensusTracker.status` 为 "consensus-reached"，本轮 `status` 为 "consensus-reached"，`overallStatus` 改回 "in-progress"
 6. 达到最大轮次仍未达成：设置 `consensusTracker.status` 为 "escalated"
 7. 追加活动日志：`{ timestamp, phase: 3, action: "review-round", message: "第N轮: X致命, Y高优先级问题", level: "info"|"warning"|"success" }`
@@ -490,7 +510,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 1. 设置 `overallStatus` 为 "tdd-loop"
 2. 如果 `bugTracker` 为 null，初始化：`{ rounds: [], currentRound: 0, maxRounds: 3, status: "in-progress" }`
 3. 递增 `bugTracker.currentRound`
-4. 在 `bugTracker.rounds` 末尾追加本轮数据：`{ round: N, newBugs: 数量, fixedBugs: 数量, remainingBugs: 数量, iterationId: "iter-N" }`
+4. 在 `bugTracker.rounds` 末尾追加本轮数据：`{ round: N, newBugs: 数量, fixedBugs: 数量, remainingBugs: 数量, iterationId: "iter-N", details: { summary: "本轮测试概述", items: ["Bug1: 描述", "Bug2: 描述"], metrics: { "通过率": "92%" } } }`（`details` 字段在 Dashboard 中点击轮次行可展开查看）
 5. Bug 为0且连续3轮无新Bug：设置 `bugTracker.status` 为 "stable"
 6. 3轮不收敛：设置 `bugTracker.status` 为 "escalated"
 7. 测试全部通过：设置 `overallStatus` 回 "in-progress"，`bugTracker.status` 为 "converging"
