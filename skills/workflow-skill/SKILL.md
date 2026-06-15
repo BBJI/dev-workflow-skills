@@ -380,9 +380,21 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
    - 使用 Bash 工具以后台方式启动（`&` 后缀，不等待进程结束）
    - 如果端口 3456 被占用，服务器会自动尝试 3457-3465
 
-3. **告知用户**：输出 `Dashboard available at: http://localhost:{端口号}`
+3. **告知用户**：**醒目地**输出 Dashboard 地址，确保用户不会遗漏。格式如下：
 
-4. **如果 Node.js 不可用**：跳过仪表盘启动，仅输出提示"Dashboard 不可用（需要 Node.js）。工作流将继续正常运行。"
+   ```
+   ╔══════════════════════════════════════════════════════════╗
+   ║  📊 Dashboard 已启动！                                  ║
+   ║  请在浏览器中打开：http://localhost:{端口号}              ║
+   ║  可实时查看工作流进度、步骤状态、产物和收敛趋势          ║
+   ╚══════════════════════════════════════════════════════════╝
+   ```
+
+   同时，在 `workflow-state.json` 中记录 `dashboardUrl` 字段（值为 `http://localhost:{端口号}`），方便前端展示。
+
+4. **检查点提醒**：在每个检查点暂停等待用户时，附加一行提示：`📊 Dashboard: http://localhost:{端口号}`，提醒用户可以查看实时进度。
+
+5. **如果 Node.js 不可用**：跳过仪表盘启动，仅输出提示"Dashboard 不可用（需要 Node.js）。工作流将继续正常运行。"
 
 ### 状态文件结构
 
@@ -392,6 +404,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 {
   "projectName": "项目名",
   "projectType": "existing|new",
+  "dashboardUrl": "http://localhost:3456",
   "currentPhase": 0,
   "currentIteration": 1,
   "totalIterations": null,
@@ -548,6 +561,8 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 | 项目规范生成后（新项目） | 基于交付物提炼的规范文件 | 确认规范准确？ |
 
 用户可配置哪些检查点激活。完全自主模式下，仅最终交付检查点激活。
+
+**重要**：在每个检查点暂停时，如果仪表盘正在运行，必须附加一行提示 Dashboard 地址（如 `📊 Dashboard: http://localhost:3456`），方便用户打开查看实时进度。
 
 ## 输出
 

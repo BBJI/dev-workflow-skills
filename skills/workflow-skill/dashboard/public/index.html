@@ -161,7 +161,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <span id="statusBadge" class="status-badge not-started">not-started</span>
   <span class="conn-dot disconnected" id="connDot"></span>
   <span class="phase-label" id="phaseLabel">Connecting...</span>
-  <span style="margin-left:auto;font-size:12px;color:var(--c-text2)">更新: <span id="lastRefresh">--:--:--</span></span>
+  <span style="margin-left:auto;font-size:12px;color:var(--c-text2)">
+    <a id="dashboardUrlLink" href="" target="_blank" style="color:var(--c-primary);text-decoration:none;margin-right:12px;display:none">&#128279; 分享链接</a>
+    更新: <span id="lastRefresh">--:--:--</span>
+  </span>
 </div>
 
 <div class="timeline" id="timeline"></div>
@@ -274,6 +277,12 @@ function renderState(state) {
   const emptyEl = document.getElementById('emptyState');
   if (emptyEl) emptyEl.style.display = 'none';
   document.getElementById('projectName').textContent = state.projectName || 'DWS Dashboard';
+
+  // Show dashboard URL link if available
+  if (state.dashboardUrl) {
+    const link = document.getElementById('dashboardUrlLink');
+    if (link) { link.href = state.dashboardUrl; link.style.display = 'inline'; }
+  }
 
   // Status badge
   const badge = document.getElementById('statusBadge');

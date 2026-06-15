@@ -203,13 +203,13 @@ app.get('/events', (req, res) => {
   });
 });
 
-// Artifact serving
+// Artifact serving — paths are relative to PROJECT_ROOT (e.g. .dws/{project}/req/requirements.md)
 app.get('/artifacts/*', (req, res) => {
   const reqPath = req.params[0];
-  const filePath = resolve(DWS_DIR, reqPath);
+  const filePath = resolve(PROJECT_ROOT, reqPath);
 
   // Prevent directory traversal
-  if (!filePath.startsWith(resolve(DWS_DIR))) {
+  if (!filePath.startsWith(resolve(PROJECT_ROOT))) {
     return res.status(403).send('Forbidden');
   }
 
