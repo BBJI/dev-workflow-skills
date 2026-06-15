@@ -15,6 +15,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# 确保工作目录有效（用户可能在已被删除的目录中运行脚本）
+if (-not (Test-Path .)) { Set-Location $env:USERPROFILE }
+
 $PLUGIN_NAME = "dev-workflow-skills"
 $CLAUDE_DIR = Join-Path $env:USERPROFILE ".claude"
 $SETTINGS_FILE = Join-Path $CLAUDE_DIR "settings.json"
