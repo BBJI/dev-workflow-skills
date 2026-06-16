@@ -377,9 +377,12 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 1. **创建状态文件**：使用 `notify-state.mjs` 初始化状态文件：
    ```bash
-   node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type init --state-json "完整初始状态JSON"
+   # 先将状态 JSON 写入临时文件（避免命令行过长）
+   echo '完整初始状态JSON' > /tmp/dws-init-state.json
+   node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type init --state-json @/tmp/dws-init-state.json
+   rm -f /tmp/dws-init-state.json
    ```
-   初始状态 JSON 结构见下方"状态文件结构"。所有阶段 status 设为 "pending"（新项目阶段零设为 "skipped"，已有项目阶段零设为 "pending"），consensusTracker 和 bugTracker 设为 null，activityLog 为空数组。
+   `--state-json` 支持三种方式：1) 直接传 JSON 字符串，2) `@文件路径` 从文件读取（推荐，避免 Windows 命令行长度限制），3) 通过 stdin 管道传入。初始状态 JSON 结构见下方"状态文件结构"。所有阶段 status 设为 "pending"（新项目阶段零设为 "skipped"，已有项目阶段零设为 "pending"），consensusTracker 和 bugTracker 设为 null，activityLog 为空数组。
 
 2. **启动仪表盘服务器**：在后台启动 Node.js 服务器：
    ```bash

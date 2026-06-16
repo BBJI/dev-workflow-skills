@@ -217,6 +217,22 @@ function fallbackSetField(stateFile, field, value) {
   console.log(`OK ${field} set`);
 }
 
+// ── Resolve state-json value (inline, @file, or stdin) ────
+function resolveStateJson(val) {
+  if (!val) return null;
+  // @path → read from file
+  if (val.startsWith('@')) {
+    const filePath = val.slice(1);
+    try {
+      return readFileSync(filePath, 'utf-8');
+    } catch (e) {
+      console.error(`Cannot read state file: ${filePath}: ${e.message}`);
+      process.exit(1);
+    }
+  }
+  return val;
+}
+
 // ── Main ────────────────────────────────────────────
 async function main() {
   const args = parseArgs();
@@ -231,7 +247,7 @@ async function main() {
     console.error('  --type phase         --phase-id N --status in-progress|completed [--artifacts ...]');
     console.error('  --type overall       [--current-phase N] [--overall-status ...] [--current-iteration N] [--total-iterations N]');
     console.error('  --type activity      --phase N --action xxx --message xxx [--level info|success|warning|error]');
-    console.error('  --type init          --state-json \'{"projectName":...}\'');
+    console.error('  --type init          --state-json \'{"projectName":...}\'  or --state-json @path/to/file.json');
     console.error('  --type dashboard-url --url http://localhost:PORT');
     process.exit(1);
   }
@@ -281,7 +297,7 @@ async function main() {
       case 'init':
         path = '/api/state/init';
         try {
-          body = JSON.parse(args['state-json']);
+          body = JSON.parse(resolveStateJson(args['state-json']));
         } catch {
           console.error('Invalid --state-json'); process.exit(1);
         }
@@ -324,7 +340,7 @@ async function main() {
       break;
     case 'init':
       try {
-        fallbackInit(stateFile, JSON.parse(args['state-json']));
+        fallbackInit(stateFile, JSON.parse(resolveStateJson(args['state-json'])));
       } catch {
         console.error('Invalid --state-json'); process.exit(1);
       }
