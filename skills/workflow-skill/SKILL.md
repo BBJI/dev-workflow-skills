@@ -646,22 +646,43 @@ node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --pr
 
 ### Dashboard 问答模式
 
-**当 Dashboard 运行时，必须使用 Dashboard 问答模式向用户提问，绝不使用 `AskUserQuestion`。**
+**当 Dashboard 运行时，`AskUserQuestion` 会被 Hook 自动拦截**——问题推送到 Dashboard，CC 改用轮询方式获取答案。
 
-原因：`AskUserQuestion` 是阻塞式工具——CC 调用后就卡在等 CLI 输入，Dashboard 的回答无法注入回 CC。而 Dashboard 问答模式是 CC 主动轮询状态文件检测答案，用户在 Dashboard 提交后 CC 立即感知并继续执行。
+**自动拦截机制**：`PreToolUse` Hook（`push-question.mjs`）检测到 Dashboard 运行时：
+1. 将问题推送到 Dashboard
+2. **阻止** `AskUserQuestion` 调用
+3. 注入 `additionalContext`，指示 CC 使用 `dashboard-ask.mjs --poll-only` 轮询答案
+
+CC 收到拦截指令后，执行以下命令获取用户在 Dashboard 的回答：
+```bash
+RESULT=$(node "$SKILL_DIR/dashboard/dashboard-ask.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --poll-only --timeout 1800)
+if echo "$RESULT" | grep -q "^ANSWER_RECEIVED:"; then
+  ANSWER=$(echo "$RESULT" | sed 's/^ANSWER_RECEIVED://')
+  # 解析 ANSWER 并继续工作流
+else
+  # 超时，改用 AskUserQuestion 作为备选
+fi
+```
 
 **决策流程**：
 
 ```
-需要向用户提问
+CC 需要向用户提问
     │
-    ├─ 检测 Dashboard 端口文件是否存在（.dws/{项目名}/.dashboard.port）
+    ├─ 调用 AskUserQuestion
     │   │
-    │   ├─ 存在 → 使用 Dashboard 问答模式（notify-state.mjs + 轮询）
+    │   ├─ Hook 检测 Dashboard 端口文件
+    │   │   │
+    │   │   ├─ Dashboard 运行中 → Hook 拦截 AskUserQuestion
+    │   │   │   → 问题自动推送到 Dashboard
+    │   │   │   → CC 执行 dashboard-ask.mjs --poll-only 轮询答案
+    │   │   │
+    │   │   └─ Dashboard 未运行 → Hook 放行 AskUserQuestion
+    │   │       → 用户在 CLI 中回答
     │   │
-    │   └─ 不存在 → 使用 AskUserQuestion（Hook 自动同步到 Dashboard）
+    │   └─ 无需手动判断，Hook 自动处理
     │
-    └─ 绝不两者同时使用
+    └─ 也可主动使用 dashboard-ask.mjs（不经过 AskUserQuestion）
 ```
 
 **Dashboard 问答模式操作步骤**：

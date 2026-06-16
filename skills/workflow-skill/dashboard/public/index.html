@@ -1221,7 +1221,8 @@ function renderQuestionPanel(q) {
       const qq = questions[i];
       const isActive = i === activeQuestionTab;
       const qSelected = selectedOptions.get(qq.id);
-      const hasAnswer = qSelected && qSelected.size > 0;
+      const hasCustomAnswer = ((window._customTexts || {})[qq.id] || '').trim().length > 0;
+      const hasAnswer = (qSelected && qSelected.size > 0) || hasCustomAnswer;
       html += `<button class="q-tab${isActive ? ' active' : ''}${hasAnswer ? ' answered' : ''}"
         onclick="switchQuestionTab(${i})" type="button">
         <span class="q-tab-label">${escHtml(qq.header || `问题 ${i + 1}`)}</span>
@@ -1265,7 +1266,7 @@ function renderQuestionPanel(q) {
   html += '</div>'; // q-tab-content
 
   // Actions
-  const allAnswered = questions.every(qq => (selectedOptions.get(qq.id) || new Set()).size > 0);
+  const allAnswered = questions.every(qq => (selectedOptions.get(qq.id) || new Set()).size > 0 || ((window._customTexts || {})[qq.id] || '').trim().length > 0);
   html += `<div class="question-actions">
     <button class="q-submit-btn${allAnswered ? '' : ' q-submit-partial'}" id="questionSubmitBtn" onclick="submitQuestionAnswer('${escAttr(q.id)}')">${questions.length > 1 ? `提交全部回答 (${questions.length}个问题)` : '提交回答'}</button>
     <span class="q-submit-hint">或在 CLI 中回答</span>
@@ -1279,6 +1280,35 @@ function renderQuestionPanel(q) {
 window._customTexts = {};
 function saveCustomText(questionId, value) {
   window._customTexts[questionId] = value;
+  // Update submit button state and tab indicator without full re-render
+  const q = prevState?.pendingQuestion;
+  if (!q) return;
+  const hasMulti = q.questions && Array.isArray(q.questions) && q.questions.length > 0;
+  const questions = hasMulti ? q.questions : [q];
+  const btn = document.getElementById('questionSubmitBtn');
+  if (btn) {
+    const allAnswered = questions.every(qq => (selectedOptions.get(qq.id) || new Set()).size > 0 || ((window._customTexts || {})[qq.id] || '').trim().length > 0);
+    btn.classList.toggle('q-submit-partial', !allAnswered);
+  }
+  // Update tab check mark
+  if (hasMulti) {
+    const tabs = document.querySelectorAll('.q-tab');
+    tabs.forEach((tab, i) => {
+      const qq = questions[i];
+      if (!qq) return;
+      const qSelected = selectedOptions.get(qq.id);
+      const hasCustomAnswer = ((window._customTexts || {})[qq.id] || '').trim().length > 0;
+      const hasAnswer = (qSelected && qSelected.size > 0) || hasCustomAnswer;
+      const existingCheck = tab.querySelector('.q-tab-check');
+      if (hasAnswer && !existingCheck) {
+        tab.insertAdjacentHTML('beforeend', '<span class="q-tab-check">✓</span>');
+        tab.classList.add('answered');
+      } else if (!hasAnswer && existingCheck) {
+        existingCheck.remove();
+        tab.classList.remove('answered');
+      }
+    });
+  }
 }
 
 function switchQuestionTab(index) {
@@ -1336,15 +1366,18 @@ function submitQuestionAnswer(questionId) {
   const answers = [];
   for (const qq of questions) {
     const opts = selectedOptions.get(qq.id);
-    if (!opts || opts.size === 0) {
+    const customText = ((window._customTexts || {})[qq.id] || '').trim();
+    const hasOption = opts && opts.size > 0;
+    const hasCustom = customText.length > 0;
+    if (!hasOption && !hasCustom) {
       btn.textContent = `请先回答: ${qq.header || '问题'}`;
       setTimeout(() => { if (btn) btn.textContent = questions.length > 1 ? `提交全部回答 (${questions.length}个问题)` : '提交回答'; }, 2000);
       return;
     }
     answers.push({
       questionId: qq.id,
-      selectedValues: Array.from(opts),
-      customText: (window._customTexts || {})[qq.id] || ''
+      selectedValues: hasOption ? Array.from(opts) : [],
+      customText: hasCustom ? customText : ''
     });
   }
 

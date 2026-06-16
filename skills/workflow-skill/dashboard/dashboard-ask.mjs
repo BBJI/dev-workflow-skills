@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // dashboard-ask.mjs — Dashboard Q&A helper: push question(s) + poll for answer + clear
-// Usage: node dashboard-ask.mjs --project-root ... --project-name ... --question "text" --header "title" --options '[...]'
-//    OR: node dashboard-ask.mjs --project-root ... --project-name ... --questions '[{...},{...}]'
+// Usage:
+//   Push + poll:  node dashboard-ask.mjs --project-root ... --project-name ... --question "text" --header "title" --options '[...]'
+//   Push + poll:  node dashboard-ask.mjs --project-root ... --project-name ... --questions '[{...},{...}]'
+//   Poll only:    node dashboard-ask.mjs --project-root ... --project-name ... --poll-only [--timeout 1800]
 
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, resolve } from 'path';
 
 function toWinPath(p) {
@@ -45,57 +47,48 @@ async function main() {
   const args = parseArgs();
   const projectRoot = resolve(toWinPath(args['project-root']) || process.cwd());
   const projectName = args['project-name'] || 'default';
+  const pollOnly = !!args['poll-only'];
 
   if (!isDashboardRunning(projectRoot, projectName)) {
-    // Dashboard not running — output special marker so CC knows to use AskUserQuestion
     console.log('DASHBOARD_NOT_RUNNING');
     process.exit(0);
   }
 
-  // Find notify-state.mjs (sibling of this script)
+  const { execSync } = await import('child_process');
   const scriptDir = resolve(import.meta.dirname);
   const notifyState = join(scriptDir, 'notify-state.mjs');
 
-  // Step 1: Push question
-  const { execSync } = await import('child_process');
+  // Step 1: Push question (skip if --poll-only)
+  if (!pollOnly) {
+    let pushCmd;
+    if (args.questions) {
+      const tmpFile = join(projectRoot, '.dws', projectName, '.tmp', 'questions.json');
+      mkdirSync(join(projectRoot, '.dws', projectName, '.tmp'), { recursive: true });
+      writeFileSync(tmpFile, args.questions, 'utf-8');
+      pushCmd = `node "${notifyState}" --project-root "${projectRoot}" --project-name "${projectName}" --type question --questions @"${tmpFile}"`;
+    } else if (args.question) {
+      const question = args.question;
+      const header = args.header || 'CC 需要你的决策';
+      const multiSelect = args['multi-select'] || 'false';
+      const options = args.options || '[]';
 
-  let pushCmd;
-  if (args.questions) {
-    // Write questions to temp file to avoid shell quoting issues
-    const tmpFile = join(projectRoot, '.dws', projectName, '.tmp', 'questions.json');
-    const { mkdirSync, writeFileSync } = await import('fs');
-    mkdirSync(join(projectRoot, '.dws', projectName, '.tmp'), { recursive: true });
-    writeFileSync(tmpFile, args.questions, 'utf-8');
-    pushCmd = `node "${notifyState}" --project-root "${projectRoot}" --project-name "${projectName}" --type question --questions @"${tmpFile}"`;
-  } else {
-    // Single question — use --question flag
-    const question = args.question || '';
-    const header = args.header || 'CC 需要你的决策';
-    const multiSelect = args['multi-select'] || 'false';
-    const options = args.options || '[]';
+      const tmpFile = join(projectRoot, '.dws', projectName, '.tmp', 'question-opts.json');
+      mkdirSync(join(projectRoot, '.dws', projectName, '.tmp'), { recursive: true });
 
-    // Write options to temp file
-    const tmpFile = join(projectRoot, '.dws', projectName, '.tmp', 'question-opts.json');
-    const { mkdirSync, writeFileSync } = await import('fs');
-    mkdirSync(join(projectRoot, '.dws', projectName, '.tmp'), { recursive: true });
+      const payload = { question, header, multiSelect: multiSelect === 'true', options: JSON.parse(options) };
+      writeFileSync(tmpFile, JSON.stringify([payload]), 'utf-8');
+      pushCmd = `node "${notifyState}" --project-root "${projectRoot}" --project-name "${projectName}" --type question --questions @"${tmpFile}"`;
+    } else {
+      console.error('Usage: --question "text" --options [...] or --questions [...]  or --poll-only');
+      process.exit(1);
+    }
 
-    // Build the full question payload and write to file
-    const payload = JSON.stringify({
-      question,
-      header,
-      multiSelect: multiSelect === 'true',
-      options: JSON.parse(options)
-    });
-    writeFileSync(tmpFile, JSON.stringify([JSON.parse(payload)]), 'utf-8');
-
-    pushCmd = `node "${notifyState}" --project-root "${projectRoot}" --project-name "${projectName}" --type question --questions @"${tmpFile}"`;
-  }
-
-  try {
-    execSync(pushCmd, { stdio: 'pipe', timeout: 5000 });
-  } catch (e) {
-    console.error('Push failed:', e.message);
-    process.exit(1);
+    try {
+      execSync(pushCmd, { stdio: 'pipe', timeout: 5000 });
+    } catch (e) {
+      console.error('Push failed:', e.message);
+      process.exit(1);
+    }
   }
 
   // Step 2: Poll for answer
@@ -110,7 +103,6 @@ async function main() {
         const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
         const pq = state.pendingQuestion;
         if (pq && pq.status === 'answered') {
-          // Step 3: Output answer
           const answer = pq.answer;
           if (answer.answers && Array.isArray(answer.answers)) {
             console.log('ANSWER_RECEIVED:' + JSON.stringify(answer.answers));
@@ -121,7 +113,7 @@ async function main() {
             }));
           }
 
-          // Step 4: Clear question
+          // Step 3: Clear question
           try {
             execSync(`node "${notifyState}" --project-root "${projectRoot}" --project-name "${projectName}" --type question-clear`, { stdio: 'pipe', timeout: 5000 });
           } catch {}
@@ -131,7 +123,6 @@ async function main() {
       }
     } catch {}
 
-    // Wait
     await new Promise(r => setTimeout(r, interval * 1000));
     elapsed += interval;
   }
