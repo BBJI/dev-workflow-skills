@@ -646,28 +646,17 @@ node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --pr
 
 ### Dashboard 问答模式
 
-当仪表盘正在运行时，检查点暂停可采用 **Dashboard 问答模式** 替代或补充 `AskUserQuestion`：
+当仪表盘正在运行时，**优先使用 Dashboard 问答模式**向用户提问，而非 `AskUserQuestion`。原因：Dashboard 回答无法自动回传给 `AskUserQuestion`，而轮询模式可以让 CC 主动检测 Dashboard 中的回答并继续执行。
 
-**自动同步机制**：项目配置了 Claude Code Hook，CC 调用 `AskUserQuestion` 时会自动将问题推送到 Dashboard：
-- `PreToolUse` Hook（`push-question.mjs`）：拦截 `AskUserQuestion`，将问题推送到 Dashboard Server 的 `/api/question/push` 端点
-- `PostToolUse` Hook（`clear-question.mjs`）：`AskUserQuestion` 完成后，清理 Dashboard 中的问题
-
-这意味着 **CC 只需正常调用 `AskUserQuestion`，问题会自动出现在 Dashboard 上**，无需额外操作。
-
-**手动推送问题**（工作流检查点）：如果需要在 Dashboard 上推送自定义问题（不通过 `AskUserQuestion`），可直接调用 Dashboard API：
+**提问方式**：通过 `notify-state.mjs` 推送问题到 Dashboard，然后轮询等待答案：
 
 ```bash
-curl -s -X POST http://localhost:{端口}/api/question/push \
-  -H "Content-Type: application/json" \
-  -d '{"question":"问题文本","header":"CC 需要你的决策","multiSelect":false,"options":[{"value":"opt1","label":"选项1","description":"描述1"},{"value":"opt2","label":"选项2","description":"描述2"}]}'
-```
+# 1. 推送问题
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type question --question "问题文本" --header "CC 需要你的决策" --multi-select false --options '[{"value":"opt1","label":"选项1","description":"描述1"},{"value":"opt2","label":"选项2","description":"描述2"}]'
 
-**轮询答案**：推送问题后，使用 Bash 轮询 `workflow-state.json` 检测答案：
-
-```bash
-# 轮询脚本模板
+# 2. 轮询等待答案（Dashboard 回答后自动继续）
 STATE_FILE=".dws/{项目名}/workflow-state.json"
-TIMEOUT=1800  # 30分钟
+TIMEOUT=1800
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
   STATUS=$(node -e "try{const s=JSON.parse(require('fs').readFileSync('$STATE_FILE','utf-8'));console.log(s.pendingQuestion?.status||'none')}catch{console.log('none')}")
@@ -682,16 +671,18 @@ done
 if [ $ELAPSED -ge $TIMEOUT ]; then
   echo "ANSWER_TIMEOUT"
 fi
+
+# 3. 读取答案后清理问题
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type question-clear
 ```
 
-**双通道策略**：Dashboard 问答和 `AskUserQuestion` 同时生效：
-1. **自动同步**：Hook 确保 `AskUserQuestion` 的每个问题自动出现在 Dashboard
-2. **先到先得**：哪个渠道先收到回答就使用哪个。如果 Dashboard 先收到答案，CC 读取状态文件中的答案继续；如果 CLI 先收到，PostToolUse Hook 自动清理 Dashboard 问题
-3. **超时回退**：如果轮询超时（30 分钟无 Dashboard 回答），仅依赖 `AskUserQuestion` 的结果
+**同时使用 `AskUserQuestion` 作为备选**：如果 Dashboard 未运行（端口检测失败），回退到 `AskUserQuestion`。Hook 会自动将 `AskUserQuestion` 的问题同步到 Dashboard（如果 Dashboard 后续启动的话）。
 
-**读取答案后清理**：CC 读取答案后，将 `pendingQuestion` 设为 `null`，使 Dashboard 中的问题面板消失。
+**Hook 自动同步**（仅对 `AskUserQuestion` 生效）：
+- `PreToolUse` Hook（`push-question.mjs`）：`AskUserQuestion` 触发时自动推送问题到 Dashboard
+- `PostToolUse` Hook（`clear-question.mjs`）：`AskUserQuestion` 完成后自动清理 Dashboard 问题
 
-**问题 ID 规则**：`q-{NNN}`，NNN 为递增编号，每次工作流运行从 001 开始。
+**读取答案后清理**：CC 读取答案后，调用 `--type question-clear` 将 `pendingQuestion` 设为 `null`，使 Dashboard 中的问题面板消失。
 
 **Hook 配置**：Hook 配置在项目 `.claude/settings.json` 中，路径通过 `find` 动态解析插件缓存位置：
 ```json

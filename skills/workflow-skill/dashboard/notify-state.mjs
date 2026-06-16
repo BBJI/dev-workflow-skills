@@ -243,13 +243,15 @@ async function main() {
   const stateFile = join(projectRoot, '.dws', projectName, 'workflow-state.json');
 
   if (!type) {
-    console.error('Usage: notify-state.mjs --type step|phase|overall|activity|init|dashboard-url [options]');
+    console.error('Usage: notify-state.mjs --type step|phase|overall|activity|init|dashboard-url|question|question-clear [options]');
     console.error('  --type step          --phase-id N --step-id xxx --status in-progress|completed [--detail ...] [--result ...]');
     console.error('  --type phase         --phase-id N --status in-progress|completed [--artifacts ...]');
     console.error('  --type overall       [--current-phase N] [--overall-status ...] [--current-iteration N] [--total-iterations N]');
     console.error('  --type activity      --phase N --action xxx --message xxx [--level info|success|warning|error]');
     console.error('  --type init          --state-json \'{"projectName":...}\'  or --state-json @path/to/file.json');
     console.error('  --type dashboard-url --url http://localhost:PORT');
+    console.error('  --type question      --question "text" --header "title" [--multi-select false] --options \'[{"value":"v1","label":"L1"}]\'');
+    console.error('  --type question-clear');
     process.exit(1);
   }
 
@@ -307,6 +309,25 @@ async function main() {
         path = '/api/state/field';
         body = { field: 'dashboardUrl', value: args.url };
         break;
+      case 'question':
+        path = '/api/question/push';
+        try {
+          body = {
+            id: `q-${String(Date.now()).slice(-6)}`,
+            question: args.question || '',
+            header: args.header || 'CC 需要你的决策',
+            multiSelect: !!args['multi-select'] && args['multi-select'] !== 'false',
+            options: JSON.parse(args.options || '[]'),
+            allowCustom: true
+          };
+        } catch {
+          console.error('Invalid --options JSON'); process.exit(1);
+        }
+        break;
+      case 'question-clear':
+        path = '/api/question/clear';
+        body = {};
+        break;
       default:
         console.error('Unknown type:', type); process.exit(1);
     }
@@ -348,6 +369,38 @@ async function main() {
       break;
     case 'dashboard-url':
       fallbackSetField(stateFile, 'dashboardUrl', args.url);
+      break;
+    case 'question':
+      try {
+        const state = readStateFile(stateFile);
+        if (state) {
+          state.pendingQuestion = {
+            id: `q-${String(Date.now()).slice(-6)}`,
+            question: args.question || '',
+            header: args.header || 'CC 需要你的决策',
+            multiSelect: !!args['multi-select'] && args['multi-select'] !== 'false',
+            options: JSON.parse(args.options || '[]'),
+            allowCustom: true,
+            status: 'pending'
+          };
+          writeStateFileAtomic(stateFile, state);
+          console.log('OK question pushed');
+        }
+      } catch {
+        console.error('Failed to push question'); process.exit(1);
+      }
+      break;
+    case 'question-clear':
+      try {
+        const s = readStateFile(stateFile);
+        if (s) {
+          s.pendingQuestion = null;
+          writeStateFileAtomic(stateFile, s);
+          console.log('OK question cleared');
+        }
+      } catch {
+        console.error('Failed to clear question'); process.exit(1);
+      }
       break;
   }
 }
