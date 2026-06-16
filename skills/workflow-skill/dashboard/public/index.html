@@ -286,6 +286,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .notif-dot{width:10px;height:10px;border-radius:50%;background:var(--c-warning);animation:notifBlink 1s infinite;display:inline-block}
 @keyframes notifBlink{50%{opacity:.3}}
 
+/* Global question panel (between header and timeline) */
+.question-panel-global{background:var(--c-surface);border-bottom:2px solid var(--c-primary);padding:0 24px;animation:questionSlideIn .4s ease-out}
+.question-panel-global.has-question{padding:16px 24px;box-shadow:0 4px 16px rgba(79,140,255,.2)}
+.question-panel-global.answered{border-color:var(--c-success);box-shadow:0 4px 16px rgba(52,211,153,.15)}
+
+/* Header glow bar when question is pending */
+.header.has-question{box-shadow:inset 0 -2px 8px rgba(79,140,255,.4)}
+
+/* Sound toggle */
+.sound-toggle{background:none;border:none;color:var(--c-text2);cursor:pointer;padding:2px 6px;border-radius:4px;font-size:14px;line-height:1;vertical-align:middle;margin-left:8px;transition:color .2s}
+.sound-toggle:hover{color:var(--c-text)}
+.sound-toggle.on{color:var(--c-primary)}
+
 /* Responsive */
 @media(max-width:1024px){
   .main{flex-direction:column}
@@ -305,13 +318,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <span class="conn-dot disconnected" id="connDot"></span>
   <span class="phase-label" id="phaseLabel">Connecting...</span>
   <span style="margin-left:auto;font-size:12px;color:var(--c-text2)">
-    <span class="notif-indicator" id="notifIndicator" title="有待回答的问题">
+    <span class="notif-indicator" id="notifIndicator" title="有待回答的问题" onclick="scrollToQuestion()">
       <span class="notif-dot"></span>
     </span>
     <a id="dashboardUrlLink" href="" target="_blank" style="color:var(--c-primary);text-decoration:none;margin-right:12px;display:none">&#128279; 分享链接</a>
     更新: <span id="lastRefresh">--:--:--</span>
   </span>
 </div>
+
+<div id="questionPanel" class="question-panel-global" style="display:none"></div>
 
 <div class="timeline" id="timeline"></div>
 
@@ -460,6 +475,7 @@ function renderState(state) {
     : '';
 
   renderTimeline(state);
+  renderGlobalQuestionPanel(state);
   renderPhaseDetail(state);
   renderSidePanel(state);
   handleQuestionNotification(state);
@@ -485,6 +501,102 @@ function renderTimeline(state) {
   el.innerHTML = html;
 }
 
+// ── Global question panel ───────────────────────────
+let questionAutoHideTimer = null;
+let soundEnabled = false;
+
+function renderGlobalQuestionPanel(state) {
+  const panel = document.getElementById('questionPanel');
+  const header = document.querySelector('.header');
+  const q = state.pendingQuestion;
+
+  if (!q || q.status === 'answered') {
+    // Show answered state briefly then hide
+    if (q && q.status === 'answered' && panel.classList.contains('has-question')) {
+      panel.classList.remove('has-question');
+      panel.classList.add('answered');
+      panel.innerHTML = renderQuestionPanel(q);
+      header.classList.remove('has-question');
+      // Auto-hide after 3s
+      if (questionAutoHideTimer) clearTimeout(questionAutoHideTimer);
+      questionAutoHideTimer = setTimeout(() => {
+        panel.style.display = 'none';
+        panel.classList.remove('answered');
+        panel.innerHTML = '';
+      }, 3000);
+    } else if (!q) {
+      panel.style.display = 'none';
+      panel.classList.remove('has-question', 'answered');
+      panel.innerHTML = '';
+      header.classList.remove('has-question');
+    }
+    return;
+  }
+
+  // Pending question
+  if (questionAutoHideTimer) { clearTimeout(questionAutoHideTimer); questionAutoHideTimer = null; }
+  panel.style.display = 'block';
+  panel.classList.add('has-question');
+  panel.classList.remove('answered');
+  header.classList.add('has-question');
+  panel.innerHTML = renderQuestionPanel(q);
+}
+
+function scrollToQuestion() {
+  const panel = document.getElementById('questionPanel');
+  if (panel && panel.style.display !== 'none') {
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+// ── Sound notification ──────────────────────────────
+function playQuestionSound() {
+  if (!soundEnabled) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    osc.type = 'sine';
+    gain.gain.value = 0.15;
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.stop(ctx.currentTime + 0.3);
+  } catch {}
+}
+
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  const btn = document.getElementById('soundToggle');
+  if (btn) {
+    btn.textContent = soundEnabled ? '🔊' : '🔇';
+    btn.classList.toggle('on', soundEnabled);
+  }
+  if (soundEnabled) playQuestionSound(); // test
+}
+
+// ── Keyboard shortcuts ──────────────────────────────
+document.addEventListener('keydown', (e) => {
+  const q = prevState?.pendingQuestion;
+  if (!q || q.status !== 'pending') return;
+
+  // 1-4 to select options
+  const num = parseInt(e.key);
+  if (num >= 1 && num <= 4 && num <= (q.options || []).length) {
+    e.preventDefault();
+    const optValue = q.options[num - 1].value;
+    toggleQuestionOption(optValue, !!q.multiSelect);
+  }
+
+  // Enter to submit
+  if (e.key === 'Enter' && document.activeElement?.id !== 'questionCustomInput') {
+    e.preventDefault();
+    submitQuestionAnswer(q.id);
+  }
+});
+
 function selectPhase(id) {
   selectedPhase = id;
   expandedSteps.clear();
@@ -502,11 +614,6 @@ function renderPhaseDetail(state) {
   }
 
   let html = '';
-
-  // Question panel (only on current phase view)
-  if (state.pendingQuestion && phaseId === state.currentPhase) {
-    html += renderQuestionPanel(state.pendingQuestion);
-  }
 
   html += `<div class="phase-detail">
     <h2>${PHASES[phase.id]?.fullName || phase.name}</h2>
@@ -1086,6 +1193,7 @@ function renderQuestionPanel(q) {
   html += `<div class="question-actions">
     <button class="q-submit-btn" id="questionSubmitBtn" onclick="submitQuestionAnswer('${escAttr(q.id)}')">提交回答</button>
     <span class="q-submit-hint">或在 CLI 中回答</span>
+    <button class="sound-toggle${soundEnabled ? ' on' : ''}" id="soundToggle" onclick="toggleSound()" title="通知音效">${soundEnabled ? '🔊' : '🔇'}</button>
   </div>`;
 
   html += '</div>';
@@ -1163,6 +1271,10 @@ function handleQuestionNotification(state) {
     // Update tab title
     if (!document.title.startsWith('[?]')) {
       document.title = '[?] ' + document.title.replace(/^\[\?\]\s*/, '');
+    }
+    // Play sound on NEW question
+    if (prevPendingQuestion?.id !== q.id) {
+      playQuestionSound();
     }
     // Browser notification if tab not visible and question is new
     if (prevPendingQuestion?.id !== q.id && document.hidden) {

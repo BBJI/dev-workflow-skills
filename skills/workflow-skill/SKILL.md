@@ -588,28 +588,21 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 当仪表盘正在运行时，检查点暂停可采用 **Dashboard 问答模式** 替代或补充 `AskUserQuestion`：
 
-**写入问题**：在检查点暂停时，将问题数据写入 `workflow-state.json` 的 `pendingQuestion` 字段：
+**自动同步机制**：项目配置了 Claude Code Hook，CC 调用 `AskUserQuestion` 时会自动将问题推送到 Dashboard：
+- `PreToolUse` Hook（`push-question.mjs`）：拦截 `AskUserQuestion`，将问题推送到 Dashboard Server 的 `/api/question/push` 端点
+- `PostToolUse` Hook（`clear-question.mjs`）：`AskUserQuestion` 完成后，清理 Dashboard 中的问题
 
-```json
-{
-  "pendingQuestion": {
-    "id": "q-{NNN}",
-    "question": "问题文本",
-    "header": "CC 需要你的决策",
-    "multiSelect": false,
-    "options": [
-      {"value": "option1", "label": "选项标签", "description": "选项描述"},
-      {"value": "option2", "label": "选项标签", "description": "选项描述"}
-    ],
-    "allowCustom": true,
-    "status": "pending",
-    "answer": null,
-    "createdAt": "ISO时间戳"
-  }
-}
+这意味着 **CC 只需正常调用 `AskUserQuestion`，问题会自动出现在 Dashboard 上**，无需额外操作。
+
+**手动推送问题**（工作流检查点）：如果需要在 Dashboard 上推送自定义问题（不通过 `AskUserQuestion`），可直接调用 Dashboard API：
+
+```bash
+curl -s -X POST http://localhost:{端口}/api/question/push \
+  -H "Content-Type: application/json" \
+  -d '{"question":"问题文本","header":"CC 需要你的决策","multiSelect":false,"options":[{"value":"opt1","label":"选项1","description":"描述1"},{"value":"opt2","label":"选项2","description":"描述2"}]}'
 ```
 
-**轮询答案**：写入问题后，使用 Bash 轮询 `workflow-state.json` 检测答案：
+**轮询答案**：推送问题后，使用 Bash 轮询 `workflow-state.json` 检测答案：
 
 ```bash
 # 轮询脚本模板
@@ -631,14 +624,44 @@ if [ $ELAPSED -ge $TIMEOUT ]; then
 fi
 ```
 
-**双通道策略**：Dashboard 问答和 `AskUserQuestion` 可同时使用：
-1. **Dashboard 优先**：先写入 `pendingQuestion`，启动轮询。同时使用 `AskUserQuestion` 在 CLI 中提问。
-2. **先到先得**：哪个渠道先收到回答就使用哪个。如果 Dashboard 先收到答案，`AskUserQuestion` 会被用户跳过；如果 CLI 先收到，Dashboard 侧的问题需标记为已回答。
-3. **超时回退**：如果轮询超时（30 分钟无 Dashboard 回答），仅依赖 `AskUserQuestion` 的结果。
+**双通道策略**：Dashboard 问答和 `AskUserQuestion` 同时生效：
+1. **自动同步**：Hook 确保 `AskUserQuestion` 的每个问题自动出现在 Dashboard
+2. **先到先得**：哪个渠道先收到回答就使用哪个。如果 Dashboard 先收到答案，CC 读取状态文件中的答案继续；如果 CLI 先收到，PostToolUse Hook 自动清理 Dashboard 问题
+3. **超时回退**：如果轮询超时（30 分钟无 Dashboard 回答），仅依赖 `AskUserQuestion` 的结果
 
 **读取答案后清理**：CC 读取答案后，将 `pendingQuestion` 设为 `null`，使 Dashboard 中的问题面板消失。
 
 **问题 ID 规则**：`q-{NNN}`，NNN 为递增编号，每次工作流运行从 001 开始。
+
+**Hook 配置**：Hook 配置在项目 `.claude/settings.json` 中，路径通过 `find` 动态解析插件缓存位置：
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SKILL_DIR=\"$(dirname \"$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)\")\" && [ -f \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SKILL_DIR=\"$(dirname \"$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)\")\" && [ -f \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" || true"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
 ## 输出
 

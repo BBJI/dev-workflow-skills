@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SKILL_DIR=\"$(dirname \"$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)\")\" && [ -f \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SKILL_DIR=\"$(dirname \"$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)\")\" && [ -f \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" || true"
+          }
+        ]
+      }
+    ]
+  }
+}

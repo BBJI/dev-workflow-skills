@@ -211,6 +211,101 @@ app.post('/api/question/answer', (req, res) => {
   res.json({ success: true, answer: state.pendingQuestion.answer });
 });
 
+// Question push API — Hook pushes AskUserQuestion data here
+app.post('/api/question/push', (req, res) => {
+  const { id, question, header, multiSelect, options, allowCustom } = req.body;
+  if (!question) {
+    return res.status(400).json({ success: false, error: 'Missing question' });
+  }
+  const state = readStateFile();
+  if (!state) {
+    return res.status(404).json({ success: false, error: 'State file not found' });
+  }
+
+  // If there's already a pending question, clear it first
+  if (state.pendingQuestion && state.pendingQuestion.status === 'pending') {
+    state.activityLog.push({
+      timestamp: new Date().toISOString(),
+      phase: state.currentPhase,
+      action: 'question-superseded',
+      message: `前一个问题被新问题取代: ${state.pendingQuestion.question?.substring(0, 40)}`,
+      level: 'warning'
+    });
+  }
+
+  const questionId = id || `q-${String(Date.now()).slice(-6)}`;
+  state.pendingQuestion = {
+    id: questionId,
+    question,
+    header: header || 'CC 需要你的决策',
+    multiSelect: !!multiSelect,
+    options: (options || []).map((opt, i) => ({
+      value: opt.value || `opt-${i}`,
+      label: opt.label || opt.value || `选项 ${i + 1}`,
+      description: opt.description || ''
+    })),
+    allowCustom: allowCustom !== false,
+    status: 'pending',
+    answer: null,
+    createdAt: new Date().toISOString()
+  };
+  state.updatedAt = new Date().toISOString();
+
+  state.activityLog.push({
+    timestamp: new Date().toISOString(),
+    phase: state.currentPhase,
+    action: 'question-pushed',
+    message: `CC 提问: ${question.substring(0, 50)}`,
+    level: 'info'
+  });
+  if (state.activityLog.length > 200) {
+    state.activityLog = state.activityLog.slice(-200);
+  }
+
+  try {
+    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  } catch (e) {
+    return res.status(500).json({ success: false, error: 'Failed to write state' });
+  }
+  currentState = state;
+  broadcastState(state);
+  res.json({ success: true, questionId });
+});
+
+// Question clear API — Hook clears question after AskUserQuestion completes
+app.post('/api/question/clear', (_req, res) => {
+  const state = readStateFile();
+  if (!state) {
+    return res.status(404).json({ success: false, error: 'State file not found' });
+  }
+
+  // Only clear if not answered (if answered, let the frontend handle it)
+  if (state.pendingQuestion && state.pendingQuestion.status !== 'answered') {
+    state.pendingQuestion = null;
+    state.updatedAt = new Date().toISOString();
+
+    state.activityLog.push({
+      timestamp: new Date().toISOString(),
+      phase: state.currentPhase,
+      action: 'question-cleared',
+      message: '问题已清理（CLI 已处理）',
+      level: 'info'
+    });
+    if (state.activityLog.length > 200) {
+      state.activityLog = state.activityLog.slice(-200);
+    }
+
+    try {
+      writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+    } catch (e) {
+      return res.status(500).json({ success: false, error: 'Failed to write state' });
+    }
+    currentState = state;
+    broadcastState(state);
+  }
+  res.json({ success: true });
+});
+
 // SSE endpoint
 app.get('/events', (req, res) => {
   res.writeHead(200, {
