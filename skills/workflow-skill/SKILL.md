@@ -378,13 +378,13 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 1. **创建状态文件**：使用 `notify-state.mjs` 初始化状态文件：
    - 先用 **Write 工具**将初始状态 JSON 写入临时文件（**切勿用 echo/cat 等命令写入，JSON 中的引号会导致 shell 解析错误**）：
      ```
-     Write 工具：/tmp/dws-init-state.json ← 完整初始状态JSON
+     Write 工具：$PROJECT_ROOT/.dws/$PROJECT_NAME/.tmp/init-state.json ← 完整初始状态JSON
      ```
    - 然后执行初始化并清理：
      ```bash
-     node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type init --state-json @/tmp/dws-init-state.json && rm -f /tmp/dws-init-state.json
+     node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type init --state-json @"$PROJECT_ROOT/.dws/$PROJECT_NAME/.tmp/init-state.json" && rm -f "$PROJECT_ROOT/.dws/$PROJECT_NAME/.tmp/init-state.json"
      ```
-   `--state-json` 支持两种方式：1) 直接传 JSON 字符串（短 JSON），2) `@文件路径` 从文件读取（推荐，避免 Windows 命令行长度限制和引号转义问题）。初始状态 JSON 结构见下方"状态文件结构"。所有阶段 status 设为 "pending"（新项目阶段零设为 "skipped"，已有项目阶段零设为 "pending"），consensusTracker 和 bugTracker 设为 null，activityLog 为空数组。
+   `--state-json` 支持两种方式：1) 直接传 JSON 字符串（短 JSON），2) `@文件路径` 从文件读取（推荐，避免 Windows 命令行长度限制和引号转义问题）。**注意**：临时文件必须放在 `$PROJECT_ROOT/.dws/` 下，不要用 `/tmp/`，因为 Windows 上 `/tmp/` 路径在 Write 工具和 Node.js 之间可能不一致。初始状态 JSON 结构见下方"状态文件结构"。所有阶段 status 设为 "pending"（新项目阶段零设为 "skipped"，已有项目阶段零设为 "pending"），consensusTracker 和 bugTracker 设为 null，activityLog 为空数组。
 
 2. **启动仪表盘服务器**：在后台启动 Node.js 服务器：
    ```bash

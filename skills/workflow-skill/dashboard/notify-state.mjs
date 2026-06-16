@@ -97,6 +97,7 @@ function writeStateFileAtomic(stateFile, state) {
 }
 
 function pushActivity(state, phase, action, message, level) {
+  if (!Array.isArray(state.activityLog)) state.activityLog = [];
   state.activityLog.push({
     timestamp: new Date().toISOString(),
     phase,

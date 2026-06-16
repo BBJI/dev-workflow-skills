@@ -99,6 +99,7 @@ function writeStateFile(state) {
 
 // ── Activity log helper ─────────────────────────────
 function pushActivity(state, phase, action, message, level) {
+  if (!Array.isArray(state.activityLog)) state.activityLog = [];
   state.activityLog.push({
     timestamp: new Date().toISOString(),
     phase,
@@ -351,6 +352,7 @@ app.post('/api/state/consensus', (req, res) => {
       state.consensusTracker = { rounds: [], currentRound: 0, maxRounds: 5, status: 'in-progress' };
     }
     state.consensusTracker.currentRound = round;
+    if (!Array.isArray(state.consensusTracker.rounds)) state.consensusTracker.rounds = [];
     state.consensusTracker.rounds.push({
       round,
       fatalIssues: fatalIssues || 0,
@@ -387,6 +389,7 @@ app.post('/api/state/bug', (req, res) => {
       state.bugTracker = { rounds: [], currentRound: 0, maxRounds: 3, status: 'in-progress' };
     }
     state.bugTracker.currentRound = round;
+    if (!Array.isArray(state.bugTracker.rounds)) state.bugTracker.rounds = [];
     state.bugTracker.rounds.push({
       round,
       newBugs: newBugs || 0,
