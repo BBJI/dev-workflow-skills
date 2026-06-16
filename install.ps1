@@ -94,6 +94,29 @@ try {
     console.log('  [OK] 插件已启用/更新');
     changed = true;
 
+    // Add Dashboard hooks for AskUserQuestion → Dashboard sync
+    if (!settings.hooks) settings.hooks = {};
+    const hookCmd = 'SKILL_DIR=$(find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -not -path "*/.claude/skills/*" -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname "$SKILL_DIR")';
+
+    const preHook = {
+      matcher: "AskUserQuestion",
+      hooks: [{ type: "command", command: hookCmd + ' && [ -f "$SKILL_DIR/dashboard/hooks/push-question.mjs" ] && node "$SKILL_DIR/dashboard/hooks/push-question.mjs" || true' }]
+    };
+    const postHook = {
+      matcher: "AskUserQuestion",
+      hooks: [{ type: "command", command: hookCmd + ' && [ -f "$SKILL_DIR/dashboard/hooks/clear-question.mjs" ] && node "$SKILL_DIR/dashboard/hooks/clear-question.mjs" || true' }]
+    };
+
+    if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
+    if (!settings.hooks.PostToolUse) settings.hooks.PostToolUse = [];
+
+    const preIdx = settings.hooks.PreToolUse.findIndex(h => h.matcher === 'AskUserQuestion');
+    if (preIdx >= 0) { settings.hooks.PreToolUse[preIdx] = preHook; } else { settings.hooks.PreToolUse.push(preHook); }
+    const postIdx = settings.hooks.PostToolUse.findIndex(h => h.matcher === 'AskUserQuestion');
+    if (postIdx >= 0) { settings.hooks.PostToolUse[postIdx] = postHook; } else { settings.hooks.PostToolUse.push(postHook); }
+    console.log('  [OK] Dashboard 问答 Hooks 已配置');
+    changed = true;
+
     if (changed) {
         fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
         console.log('  [OK] settings.json 已更新');
@@ -124,6 +147,20 @@ try {
     if (s.extraKnownMarketplaces && s.extraKnownMarketplaces[pluginName]) {
         delete s.extraKnownMarketplaces[pluginName];
         console.log('  [OK] 已从 marketplaces 移除');
+        changed = true;
+    }
+    // Remove Dashboard hooks
+    if (s.hooks) {
+        if (s.hooks.PreToolUse) {
+            s.hooks.PreToolUse = s.hooks.PreToolUse.filter(h => h.matcher !== 'AskUserQuestion');
+            if (s.hooks.PreToolUse.length === 0) delete s.hooks.PreToolUse;
+        }
+        if (s.hooks.PostToolUse) {
+            s.hooks.PostToolUse = s.hooks.PostToolUse.filter(h => h.matcher !== 'AskUserQuestion');
+            if (s.hooks.PostToolUse.length === 0) delete s.hooks.PostToolUse;
+        }
+        if (Object.keys(s.hooks).length === 0) delete s.hooks;
+        console.log('  [OK] 已移除 Dashboard 问答 Hooks');
         changed = true;
     }
     if (changed) {
