@@ -251,6 +251,7 @@ async function main() {
     console.error('  --type init          --state-json \'{"projectName":...}\'  or --state-json @path/to/file.json');
     console.error('  --type dashboard-url --url http://localhost:PORT');
     console.error('  --type question      --question "text" --header "title" [--multi-select false] --options \'[{"value":"v1","label":"L1"}]\'');
+    console.error('                       OR --questions \'[{"question":"Q1","header":"H1","options":[...]},...]\'');
     console.error('  --type question-clear');
     process.exit(1);
   }
@@ -312,16 +313,26 @@ async function main() {
       case 'question':
         path = '/api/question/push';
         try {
-          body = {
-            id: `q-${String(Date.now()).slice(-6)}`,
-            question: args.question || '',
-            header: args.header || 'CC 需要你的决策',
-            multiSelect: !!args['multi-select'] && args['multi-select'] !== 'false',
-            options: JSON.parse(args.options || '[]'),
-            allowCustom: true
-          };
+          if (args.questions) {
+            // Multi-question format: --questions '[{question:"Q1",header:"H1",options:[...]},...]'
+            const parsed = JSON.parse(args.questions);
+            body = {
+              id: `q-${String(Date.now()).slice(-6)}`,
+              questions: parsed
+            };
+          } else {
+            // Legacy single-question format
+            body = {
+              id: `q-${String(Date.now()).slice(-6)}`,
+              question: args.question || '',
+              header: args.header || 'CC 需要你的决策',
+              multiSelect: !!args['multi-select'] && args['multi-select'] !== 'false',
+              options: JSON.parse(args.options || '[]'),
+              allowCustom: true
+            };
+          }
         } catch {
-          console.error('Invalid --options JSON'); process.exit(1);
+          console.error('Invalid --options or --questions JSON'); process.exit(1);
         }
         break;
       case 'question-clear':
@@ -374,14 +385,24 @@ async function main() {
       try {
         const state = readStateFile(stateFile);
         if (state) {
+          let questions;
+          if (args.questions) {
+            questions = JSON.parse(args.questions);
+          } else {
+            questions = [{
+              id: 'q-0',
+              question: args.question || '',
+              header: args.header || 'CC 需要你的决策',
+              multiSelect: !!args['multi-select'] && args['multi-select'] !== 'false',
+              options: JSON.parse(args.options || '[]'),
+              allowCustom: true
+            }];
+          }
           state.pendingQuestion = {
             id: `q-${String(Date.now()).slice(-6)}`,
-            question: args.question || '',
-            header: args.header || 'CC 需要你的决策',
-            multiSelect: !!args['multi-select'] && args['multi-select'] !== 'false',
-            options: JSON.parse(args.options || '[]'),
-            allowCustom: true,
-            status: 'pending'
+            questions,
+            status: 'pending',
+            answer: null
           };
           writeStateFileAtomic(stateFile, state);
           console.log('OK question pushed');

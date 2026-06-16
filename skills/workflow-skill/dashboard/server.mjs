@@ -417,7 +417,7 @@ app.post('/api/state/bug', (req, res) => {
 app.post('/api/state/field', (req, res) => {
   const { field, value } = req.body;
   if (!field) return res.status(400).json({ success: false, error: 'Missing field' });
-  const updated = updateState(state => { state[field] = value; });
+  const updated = mutateState(state => { state[field] = value; });
   if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
   res.json({ success: true });
 });
@@ -428,23 +428,34 @@ app.post('/api/state/field', (req, res) => {
 
 // Question answer API
 app.post('/api/question/answer', (req, res) => {
-  const { questionId, selectedValues, customText } = req.body;
-  if (!questionId || !Array.isArray(selectedValues)) {
-    return res.status(400).json({ success: false, error: 'Missing questionId or selectedValues' });
-  }
+  const { questionId, selectedValues, customText, answers } = req.body;
   let answerData = null;
   const updated = mutateState(state => {
-    if (!state.pendingQuestion || state.pendingQuestion.id !== questionId) return;
+    if (!state.pendingQuestion) return;
+    if (state.pendingQuestion.id !== questionId) return;
     if (state.pendingQuestion.status === 'answered') return;
 
     state.pendingQuestion.status = 'answered';
-    state.pendingQuestion.answer = {
-      selectedValues,
-      customText: customText || '',
-      answeredAt: new Date().toISOString()
-    };
-    answerData = state.pendingQuestion.answer;
-    pushActivity(state, state.currentPhase, 'question-answered', `回答: ${selectedValues.join(', ')}${customText ? ' + 自定义' : ''}`, 'info');
+
+    if (answers && Array.isArray(answers)) {
+      // Multi-question answers: [{ questionId, selectedValues, customText }]
+      state.pendingQuestion.answer = {
+        answers,
+        answeredAt: new Date().toISOString()
+      };
+      answerData = state.pendingQuestion.answer;
+      const allValues = answers.flatMap(a => a.selectedValues || []);
+      pushActivity(state, state.currentPhase, 'question-answered', `回答: ${allValues.join(', ')}`, 'info');
+    } else if (Array.isArray(selectedValues)) {
+      // Legacy single answer
+      state.pendingQuestion.answer = {
+        selectedValues,
+        customText: customText || '',
+        answeredAt: new Date().toISOString()
+      };
+      answerData = state.pendingQuestion.answer;
+      pushActivity(state, state.currentPhase, 'question-answered', `回答: ${selectedValues.join(', ')}${customText ? ' + 自定义' : ''}`, 'info');
+    }
   });
   if (!updated || !answerData) return res.status(404).json({ success: false, error: 'Question not found or already answered' });
   res.json({ success: true, answer: answerData });
@@ -452,32 +463,64 @@ app.post('/api/question/answer', (req, res) => {
 
 // Question push API
 app.post('/api/question/push', (req, res) => {
-  const { id, question, header, multiSelect, options, allowCustom } = req.body;
-  if (!question) {
-    return res.status(400).json({ success: false, error: 'Missing question' });
+  const { id, question, header, multiSelect, options, allowCustom, questions } = req.body;
+  if (!questions?.length && !question) {
+    return res.status(400).json({ success: false, error: 'Missing question(s)' });
   }
   let questionId = null;
   const updated = mutateState(state => {
     if (state.pendingQuestion && state.pendingQuestion.status === 'pending') {
-      pushActivity(state, state.currentPhase, 'question-superseded', `前一个问题被新问题取代: ${state.pendingQuestion.question?.substring(0, 40)}`, 'warning');
+      const prevQ = state.pendingQuestion.questions
+        ? state.pendingQuestion.questions.map(q => q.question?.substring(0, 20)).join('; ')
+        : state.pendingQuestion.question?.substring(0, 40);
+      pushActivity(state, state.currentPhase, 'question-superseded', `前一个问题被新问题取代: ${prevQ}`, 'warning');
     }
     questionId = id || `q-${String(Date.now()).slice(-6)}`;
-    state.pendingQuestion = {
-      id: questionId,
-      question,
-      header: header || 'CC 需要你的决策',
-      multiSelect: !!multiSelect,
-      options: (options || []).map((opt, i) => ({
-        value: opt.value || `opt-${i}`,
-        label: opt.label || opt.value || `选项 ${i + 1}`,
-        description: opt.description || ''
-      })),
-      allowCustom: allowCustom !== false,
-      status: 'pending',
-      answer: null,
-      createdAt: new Date().toISOString()
-    };
-    pushActivity(state, state.currentPhase, 'question-pushed', `CC 提问: ${question.substring(0, 50)}`, 'info');
+
+    if (questions && Array.isArray(questions) && questions.length > 0) {
+      // New format: multiple questions with tabs
+      state.pendingQuestion = {
+        id: questionId,
+        questions: questions.map((q, i) => ({
+          id: q.id || `q-${i}`,
+          question: q.question || '',
+          header: q.header || 'CC 需要你的决策',
+          multiSelect: !!q.multiSelect,
+          options: (q.options || []).map((opt, j) => ({
+            value: opt.value || `opt-${j}`,
+            label: opt.label || opt.value || `选项 ${j + 1}`,
+            description: opt.description || ''
+          })),
+          allowCustom: q.allowCustom !== false,
+        })),
+        status: 'pending',
+        answer: null,
+        createdAt: new Date().toISOString()
+      };
+      const summary = questions.map(q => q.question?.substring(0, 30)).join('; ');
+      pushActivity(state, state.currentPhase, 'question-pushed', `CC 提问 (${questions.length}个问题): ${summary}`, 'info');
+    } else {
+      // Legacy format: single question → wrap in questions array
+      state.pendingQuestion = {
+        id: questionId,
+        questions: [{
+          id: 'q-0',
+          question,
+          header: header || 'CC 需要你的决策',
+          multiSelect: !!multiSelect,
+          options: (options || []).map((opt, i) => ({
+            value: opt.value || `opt-${i}`,
+            label: opt.label || opt.value || `选项 ${i + 1}`,
+            description: opt.description || ''
+          })),
+          allowCustom: allowCustom !== false,
+        }],
+        status: 'pending',
+        answer: null,
+        createdAt: new Date().toISOString()
+      };
+      pushActivity(state, state.currentPhase, 'question-pushed', `CC 提问: ${question.substring(0, 50)}`, 'info');
+    }
   });
   if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
   res.json({ success: true, questionId });
@@ -486,9 +529,14 @@ app.post('/api/question/push', (req, res) => {
 // Question clear API
 app.post('/api/question/clear', (_req, res) => {
   const updated = mutateState(state => {
-    if (state.pendingQuestion && state.pendingQuestion.status !== 'answered') {
-      state.pendingQuestion = null;
-      pushActivity(state, state.currentPhase, 'question-cleared', '问题已清理（CLI 已处理）', 'info');
+    if (state.pendingQuestion) {
+      if (state.pendingQuestion.status !== 'answered') {
+        state.pendingQuestion = null;
+        pushActivity(state, state.currentPhase, 'question-cleared', '问题已清理（CLI 已处理）', 'info');
+      } else {
+        // Already answered, just clean up
+        state.pendingQuestion = null;
+      }
     }
   });
   if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });

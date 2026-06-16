@@ -109,44 +109,21 @@ function adaptQuestion(toolInput) {
   const questions = toolInput.questions || [];
   if (questions.length === 0) return null;
 
-  // Support multiple questions: merge all into one combined question
-  if (questions.length === 1) {
-    const q = questions[0];
-    return {
-      id: `q-${String(Date.now()).slice(-6)}`,
+  // Return array of individual questions — Dashboard will render tabs
+  return {
+    id: `q-${String(Date.now()).slice(-6)}`,
+    questions: questions.map((q, i) => ({
+      id: `q-${i}`,
       question: q.question || '',
       header: q.header || 'CC 需要你的决策',
       multiSelect: !!q.multiSelect,
-      options: (q.options || []).map((opt, i) => ({
-        value: opt.value || opt.label || `opt-${i}`,
+      options: (q.options || []).map((opt, j) => ({
+        value: opt.value || opt.label || `opt-${j}`,
         label: opt.label || '',
         description: opt.description || ''
       })),
-      allowCustom: true
-    };
-  }
-
-  // Multiple questions: combine into one with grouped options
-  const combinedQuestion = questions.map((q, i) => `${i + 1}. ${q.question}`).join('\n');
-  const allOptions = [];
-  for (let qi = 0; qi < questions.length; qi++) {
-    const q = questions[qi];
-    const prefix = `[${qi + 1}]`;
-    for (const opt of (q.options || [])) {
-      allOptions.push({
-        value: `${qi}:${opt.value || opt.label || allOptions.length}`,
-        label: `${prefix} ${opt.label || ''}`,
-        description: opt.description || ''
-      });
-    }
-  }
-  return {
-    id: `q-${String(Date.now()).slice(-6)}`,
-    question: combinedQuestion,
-    header: questions[0].header || 'CC 需要你的决策',
-    multiSelect: false,
-    options: allOptions,
-    allowCustom: true
+      allowCustom: q.allowCustom !== false
+    }))
   };
 }
 

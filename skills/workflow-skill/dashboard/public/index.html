@@ -279,7 +279,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .q-submit-btn{padding:8px 24px;border-radius:6px;background:var(--c-primary);color:#fff;border:none;font-size:14px;cursor:pointer;transition:opacity .2s;font-family:inherit}
 .q-submit-btn:hover{opacity:.85}
 .q-submit-btn:disabled{opacity:.4;cursor:not-allowed}
+.q-submit-btn.q-submit-partial{opacity:.7}
 .q-submit-hint{font-size:11px;color:var(--c-text2)}
+
+/* Question tabs */
+.q-tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid var(--c-border);padding-bottom:0}
+.q-tab{padding:6px 14px;border:none;background:none;color:var(--c-text2);cursor:pointer;font-size:13px;font-family:inherit;border-bottom:2px solid transparent;transition:all .2s;display:flex;align-items:center;gap:4px;border-radius:4px 4px 0 0}
+.q-tab:hover{color:var(--c-text);background:rgba(79,140,255,.05)}
+.q-tab.active{color:var(--c-primary);border-bottom-color:var(--c-primary);font-weight:600}
+.q-tab.answered .q-tab-check{color:var(--c-success);font-size:11px}
+.q-tab-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
 
 /* Notification indicator in header */
 .notif-indicator{cursor:pointer;position:relative;display:none}
@@ -389,7 +398,8 @@ let reconnectDelay = 1000;
 let expandedSteps = new Set();
 let expandedLogs = new Set();
 let expandedTrackerRounds = new Set();
-let selectedOptions = new Set();
+let selectedOptions = new Map(); // questionId → Set of selected values
+let activeQuestionTab = 0;
 let notificationPermissionRequested = false;
 
 // ── SSE Connection ──────────────────────────────────
@@ -523,14 +533,27 @@ function renderGlobalQuestionPanel(state) {
         panel.style.display = 'none';
         panel.classList.remove('answered');
         panel.innerHTML = '';
+        selectedOptions.clear();
+        activeQuestionTab = 0;
+        window._customTexts = {};
       }, 3000);
     } else if (!q) {
       panel.style.display = 'none';
       panel.classList.remove('has-question', 'answered');
       panel.innerHTML = '';
       header.classList.remove('has-question');
+      selectedOptions.clear();
+      activeQuestionTab = 0;
+      window._customTexts = {};
     }
     return;
+  }
+
+  // New question: reset selection state if question ID changed
+  if (prevPendingQuestion?.id !== q.id) {
+    selectedOptions.clear();
+    activeQuestionTab = 0;
+    window._customTexts = {};
   }
 
   // Pending question
@@ -582,16 +605,19 @@ document.addEventListener('keydown', (e) => {
   const q = prevState?.pendingQuestion;
   if (!q || q.status !== 'pending') return;
 
-  // 1-4 to select options
+  // Get active question for shortcuts
+  const hasMulti = q.questions && Array.isArray(q.questions) && q.questions.length > 0;
+  const aq = hasMulti ? (q.questions[activeQuestionTab] || q.questions[0]) : q;
+
+  // 1-9 to select options
   const num = parseInt(e.key);
-  if (num >= 1 && num <= 4 && num <= (q.options || []).length) {
+  if (num >= 1 && num <= 9 && num <= (aq.options || []).length) {
     e.preventDefault();
-    const optValue = q.options[num - 1].value;
-    toggleQuestionOption(optValue, !!q.multiSelect);
+    toggleQuestionOption(aq.id || 'q-0', aq.options[num - 1].value, !!aq.multiSelect);
   }
 
   // Enter to submit
-  if (e.key === 'Enter' && document.activeElement?.id !== 'questionCustomInput') {
+  if (e.key === 'Enter' && !e.target.classList.contains('q-other-input')) {
     e.preventDefault();
     submitQuestionAnswer(q.id);
   }
@@ -1134,8 +1160,19 @@ document.addEventListener('keydown', (e) => {
 // ── Question panel ──────────────────────────────────
 function renderQuestionPanel(q) {
   if (!q) return '';
+
+  // Normalize: support both old format (single question) and new format (questions array)
+  const hasMultiQuestions = q.questions && Array.isArray(q.questions) && q.questions.length > 0;
+  const questions = hasMultiQuestions ? q.questions : [{
+    id: q.id || 'q-0',
+    question: q.question || '',
+    header: q.header || 'CC 需要你的决策',
+    multiSelect: !!q.multiSelect,
+    options: q.options || [],
+    allowCustom: q.allowCustom !== false
+  }];
+
   const isAnswered = q.status === 'answered';
-  const isPending = q.status === 'pending';
 
   let html = `<div class="question-panel${isAnswered ? ' answered' : ''}" role="alert" aria-live="assertive">`;
 
@@ -1144,14 +1181,26 @@ function renderQuestionPanel(q) {
       <div class="question-icon">✓</div>
       <span class="question-title">已回答</span>`;
     if (q.answer) {
-      const labels = (q.options || [])
-        .filter(o => (q.answer.selectedValues || []).includes(o.value))
-        .map(o => o.label);
-      const answerText = labels.join(', ') + (q.answer.customText ? ' + 自定义' : '');
+      let answerText = '';
+      if (q.answer.answers && Array.isArray(q.answer.answers)) {
+        answerText = q.answer.answers.map(a => {
+          const qi = questions.find(qq => qq.id === a.questionId);
+          const labels = (qi ? qi.options : []).filter(o => (a.selectedValues || []).includes(o.value)).map(o => o.label);
+          return labels.join(', ') + (a.customText ? ' + 自定义' : '');
+        }).join(' | ');
+      } else {
+        const labels = (questions[0].options || [])
+          .filter(o => (q.answer.selectedValues || []).includes(o.value))
+          .map(o => o.label);
+        answerText = labels.join(', ') + (q.answer.customText ? ' + 自定义' : '');
+      }
       html += `<span class="answered-badge">${escHtml(answerText)}</span>`;
     }
-    html += `</div>
-      <div class="question-text">${escHtml(q.question)}</div>`;
+    html += `</div>`;
+    // Show each answered question
+    for (const qq of questions) {
+      html += `<div class="question-text">${escHtml(qq.question)}</div>`;
+    }
     if (q.answer && q.answer.answeredAt) {
       html += `<div class="answered-time">回答于 ${fmtTime(q.answer.answeredAt)} · 工作流将继续执行</div>`;
     }
@@ -1162,19 +1211,42 @@ function renderQuestionPanel(q) {
   // Pending state
   html += `<div class="question-header">
     <div class="question-icon">?</div>
-    <span class="question-title">${escHtml(q.header || 'CC 需要你的决策')}</span>
-  </div>
-  <div class="question-text">${escHtml(q.question)}</div>`;
+    <span class="question-title">${escHtml(questions.length > 1 ? `CC 需要你的决策 (${questions.length}个问题)` : (questions[0].header || 'CC 需要你的决策'))}</span>
+  </div>`;
+
+  // Tabs for multiple questions
+  if (questions.length > 1) {
+    html += `<div class="q-tabs">`;
+    for (let i = 0; i < questions.length; i++) {
+      const qq = questions[i];
+      const isActive = i === activeQuestionTab;
+      const qSelected = selectedOptions.get(qq.id);
+      const hasAnswer = qSelected && qSelected.size > 0;
+      html += `<button class="q-tab${isActive ? ' active' : ''}${hasAnswer ? ' answered' : ''}"
+        onclick="switchQuestionTab(${i})" type="button">
+        <span class="q-tab-label">${escHtml(qq.header || `问题 ${i + 1}`)}</span>
+        ${hasAnswer ? '<span class="q-tab-check">✓</span>' : ''}
+      </button>`;
+    }
+    html += `</div>`;
+  }
+
+  // Render active question content
+  const aq = questions[activeQuestionTab] || questions[0];
+  const aqSelected = selectedOptions.get(aq.id) || new Set();
+
+  html += `<div class="q-tab-content" data-question-id="${escAttr(aq.id)}">`;
+  html += `<div class="question-text">${escHtml(aq.question)}</div>`;
 
   // Options
-  html += `<div class="q-option-list" role="${q.multiSelect ? 'group' : 'radiogroup'}" aria-label="选项">`;
-  (q.options || []).forEach(opt => {
-    const isSelected = selectedOptions.has(opt.value);
-    const indicatorClass = q.multiSelect ? 'q-option-checkbox' : 'q-option-radio';
-    html += `<div class="q-option${isSelected ? ' selected' : ''}" data-value="${escAttr(opt.value)}"
-      role="${q.multiSelect ? 'checkbox' : 'radio'}" aria-checked="${isSelected}" tabindex="0"
-      onclick="toggleQuestionOption('${escAttr(opt.value)}', ${!!q.multiSelect})"
-      onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleQuestionOption('${escAttr(opt.value)}', ${!!q.multiSelect})}">
+  html += `<div class="q-option-list" role="${aq.multiSelect ? 'group' : 'radiogroup'}" aria-label="选项">`;
+  (aq.options || []).forEach(opt => {
+    const isSelected = aqSelected.has(opt.value);
+    const indicatorClass = aq.multiSelect ? 'q-option-checkbox' : 'q-option-radio';
+    html += `<div class="q-option${isSelected ? ' selected' : ''}" data-value="${escAttr(opt.value)}" data-question-id="${escAttr(aq.id)}"
+      role="${aq.multiSelect ? 'checkbox' : 'radio'}" aria-checked="${isSelected}" tabindex="0"
+      onclick="toggleQuestionOption('${escAttr(aq.id)}', '${escAttr(opt.value)}', ${!!aq.multiSelect})"
+      onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleQuestionOption('${escAttr(aq.id)}', '${escAttr(opt.value)}', ${!!aq.multiSelect})}">
       <div class="${indicatorClass}"></div>
       <div class="q-option-content">
         <div class="q-option-label">${escHtml(opt.label)}</div>
@@ -1185,13 +1257,17 @@ function renderQuestionPanel(q) {
   html += '</div>';
 
   // Custom input
-  if (q.allowCustom !== false) {
-    html += `<input class="q-other-input" id="questionCustomInput" placeholder="自定义回答..." />`;
+  if (aq.allowCustom !== false) {
+    const customVal = (window._customTexts || {})[aq.id] || '';
+    html += `<input class="q-other-input" data-question-id="${escAttr(aq.id)}" placeholder="自定义回答..." value="${escAttr(customVal)}" oninput="saveCustomText('${escAttr(aq.id)}', this.value)" />`;
   }
 
+  html += '</div>'; // q-tab-content
+
   // Actions
+  const allAnswered = questions.every(qq => (selectedOptions.get(qq.id) || new Set()).size > 0);
   html += `<div class="question-actions">
-    <button class="q-submit-btn" id="questionSubmitBtn" onclick="submitQuestionAnswer('${escAttr(q.id)}')">提交回答</button>
+    <button class="q-submit-btn${allAnswered ? '' : ' q-submit-partial'}" id="questionSubmitBtn" onclick="submitQuestionAnswer('${escAttr(q.id)}')">${questions.length > 1 ? `提交全部回答 (${questions.length}个问题)` : '提交回答'}</button>
     <span class="q-submit-hint">或在 CLI 中回答</span>
     <button class="sound-toggle${soundEnabled ? ' on' : ''}" id="soundToggle" onclick="toggleSound()" title="通知音效">${soundEnabled ? '🔊' : '🔇'}</button>
   </div>`;
@@ -1200,49 +1276,87 @@ function renderQuestionPanel(q) {
   return html;
 }
 
-function toggleQuestionOption(value, multiSelect) {
+window._customTexts = {};
+function saveCustomText(questionId, value) {
+  window._customTexts[questionId] = value;
+}
+
+function switchQuestionTab(index) {
+  activeQuestionTab = index;
+  // Re-render only the question panel
+  const panel = document.getElementById('questionPanel');
+  const state = prevState;
+  if (panel && state && state.pendingQuestion) {
+    panel.innerHTML = renderQuestionPanel(state.pendingQuestion);
+  }
+}
+
+function toggleQuestionOption(questionId, value, multiSelect) {
+  if (!selectedOptions.has(questionId)) {
+    selectedOptions.set(questionId, new Set());
+  }
+  const opts = selectedOptions.get(questionId);
   if (multiSelect) {
-    if (selectedOptions.has(value)) {
-      selectedOptions.delete(value);
+    if (opts.has(value)) {
+      opts.delete(value);
     } else {
-      selectedOptions.add(value);
+      opts.add(value);
     }
   } else {
-    selectedOptions.clear();
-    selectedOptions.add(value);
+    opts.clear();
+    opts.add(value);
   }
-  // Update DOM directly
-  document.querySelectorAll('.q-option').forEach(el => {
-    const v = el.getAttribute('data-value');
-    const isSelected = selectedOptions.has(v);
-    el.classList.toggle('selected', isSelected);
-    el.setAttribute('aria-checked', isSelected);
-  });
+  // Re-render to update tabs and option states
+  const panel = document.getElementById('questionPanel');
+  const state = prevState;
+  if (panel && state && state.pendingQuestion) {
+    panel.innerHTML = renderQuestionPanel(state.pendingQuestion);
+  }
 }
 
 function submitQuestionAnswer(questionId) {
   const btn = document.getElementById('questionSubmitBtn');
   if (!btn) return;
 
-  if (selectedOptions.size === 0) {
-    btn.textContent = '请先选择一个选项';
-    setTimeout(() => { if (btn) btn.textContent = '提交回答'; }, 2000);
-    return;
+  // Check all questions have answers
+  const q = prevState?.pendingQuestion;
+  if (!q) return;
+
+  const hasMultiQuestions = q.questions && Array.isArray(q.questions) && q.questions.length > 0;
+  const questions = hasMultiQuestions ? q.questions : [{
+    id: q.id || 'q-0',
+    question: q.question || '',
+    header: q.header || 'CC 需要你的决策',
+    multiSelect: !!q.multiSelect,
+    options: q.options || [],
+    allowCustom: q.allowCustom !== false
+  }];
+
+  // Build answers array
+  const answers = [];
+  for (const qq of questions) {
+    const opts = selectedOptions.get(qq.id);
+    if (!opts || opts.size === 0) {
+      btn.textContent = `请先回答: ${qq.header || '问题'}`;
+      setTimeout(() => { if (btn) btn.textContent = questions.length > 1 ? `提交全部回答 (${questions.length}个问题)` : '提交回答'; }, 2000);
+      return;
+    }
+    answers.push({
+      questionId: qq.id,
+      selectedValues: Array.from(opts),
+      customText: (window._customTexts || {})[qq.id] || ''
+    });
   }
 
   btn.disabled = true;
   btn.textContent = '提交中...';
-
-  const customInput = document.getElementById('questionCustomInput');
-  const customText = customInput ? customInput.value.trim() : '';
 
   fetch('/api/question/answer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       questionId,
-      selectedValues: Array.from(selectedOptions),
-      customText
+      answers
     })
   })
   .then(r => r.json())
@@ -1280,8 +1394,11 @@ function handleQuestionNotification(state) {
     if (prevPendingQuestion?.id !== q.id && document.hidden) {
       if (notificationPermissionRequested && Notification.permission === 'granted') {
         try {
+          const notifBody = q.questions
+            ? q.questions.map(qq => qq.question).join('; ')
+            : q.question;
           new Notification('DWS Dashboard — 新问题', {
-            body: q.question,
+            body: notifBody,
             tag: 'dws-question-' + q.id
           });
         } catch {}

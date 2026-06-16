@@ -646,22 +646,67 @@ node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --pr
 
 ### Dashboard 问答模式
 
-当仪表盘正在运行时，**优先使用 Dashboard 问答模式**向用户提问，而非 `AskUserQuestion`。原因：Dashboard 回答无法自动回传给 `AskUserQuestion`，而轮询模式可以让 CC 主动检测 Dashboard 中的回答并继续执行。
+**当 Dashboard 运行时，必须使用 Dashboard 问答模式向用户提问，绝不使用 `AskUserQuestion`。**
 
-**提问方式**：通过 `notify-state.mjs` 推送问题到 Dashboard，然后轮询等待答案：
+原因：`AskUserQuestion` 是阻塞式工具——CC 调用后就卡在等 CLI 输入，Dashboard 的回答无法注入回 CC。而 Dashboard 问答模式是 CC 主动轮询状态文件检测答案，用户在 Dashboard 提交后 CC 立即感知并继续执行。
+
+**决策流程**：
+
+```
+需要向用户提问
+    │
+    ├─ 检测 Dashboard 端口文件是否存在（.dws/{项目名}/.dashboard.port）
+    │   │
+    │   ├─ 存在 → 使用 Dashboard 问答模式（notify-state.mjs + 轮询）
+    │   │
+    │   └─ 不存在 → 使用 AskUserQuestion（Hook 自动同步到 Dashboard）
+    │
+    └─ 绝不两者同时使用
+```
+
+**Dashboard 问答模式操作步骤**：
+
+**方式一：使用 `dashboard-ask.mjs` 一键问答**（推荐，自动处理推送+轮询+清理）
 
 ```bash
-# 1. 推送问题
+# 单个问题
+RESULT=$(node "$SKILL_DIR/dashboard/dashboard-ask.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --question "问题文本" --header "CC 需要你的决策" --multi-select false --options '[{"value":"opt1","label":"选项1","description":"描述1"},{"value":"opt2","label":"选项2","description":"描述2"}]')
+
+# 多个问题（Dashboard 以 Tab 形式展示每个问题）
+RESULT=$(node "$SKILL_DIR/dashboard/dashboard-ask.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --questions '[{"question":"问题1","header":"标题1","multiSelect":false,"options":[{"value":"a","label":"选项A"}]},{"question":"问题2","header":"标题2","multiSelect":false,"options":[{"value":"b","label":"选项B"}]}]')
+
+# 处理结果
+if [ "$RESULT" = "DASHBOARD_NOT_RUNNING" ]; then
+  # Dashboard 未运行，回退到 AskUserQuestion
+  ...
+elif echo "$RESULT" | grep -q "^ANSWER_TIMEOUT"; then
+  # 超时，回退到 AskUserQuestion
+  ...
+else
+  # 答案在 ANSWER_RECEIVED: 后面
+  ANSWER=$(echo "$RESULT" | sed 's/^ANSWER_RECEIVED://')
+  # 根据 ANSWER 继续执行
+fi
+```
+
+**方式二：手动分步操作**
+
+```bash
+# Step 1: 推送问题到 Dashboard
+# 单个问题
 node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type question --question "问题文本" --header "CC 需要你的决策" --multi-select false --options '[{"value":"opt1","label":"选项1","description":"描述1"},{"value":"opt2","label":"选项2","description":"描述2"}]'
 
-# 2. 轮询等待答案（Dashboard 回答后自动继续）
+# 多个问题（Dashboard 以 Tab 形式展示每个问题）
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type question --questions '[{"question":"问题1","header":"标题1","multiSelect":false,"options":[{"value":"a","label":"选项A"}]},{"question":"问题2","header":"标题2","multiSelect":false,"options":[{"value":"b","label":"选项B"}]}]'
+
+# Step 2: 轮询等待答案（用户在 Dashboard 提交后自动继续）
 STATE_FILE=".dws/{项目名}/workflow-state.json"
 TIMEOUT=1800
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
   STATUS=$(node -e "try{const s=JSON.parse(require('fs').readFileSync('$STATE_FILE','utf-8'));console.log(s.pendingQuestion?.status||'none')}catch{console.log('none')}")
   if [ "$STATUS" = "answered" ]; then
-    ANSWER=$(node -e "const s=JSON.parse(require('fs').readFileSync('$STATE_FILE','utf-8'));console.log(JSON.stringify(s.pendingQuestion.answer))")
+    ANSWER=$(node -e "const s=JSON.parse(require('fs').readFileSync('$STATE_FILE','utf-8'));const a=s.pendingQuestion.answer;if(a.answers){console.log(JSON.stringify(a.answers))}else{console.log(JSON.stringify({selectedValues:a.selectedValues,customText:a.customText}))}")
     echo "ANSWER_RECEIVED: $ANSWER"
     break
   fi
@@ -672,11 +717,17 @@ if [ $ELAPSED -ge $TIMEOUT ]; then
   echo "ANSWER_TIMEOUT"
 fi
 
-# 3. 读取答案后清理问题
+# Step 3: 读取答案后清理问题
 node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type question-clear
 ```
 
-**同时使用 `AskUserQuestion` 作为备选**：如果 Dashboard 未运行（端口检测失败），回退到 `AskUserQuestion`。Hook 会自动将 `AskUserQuestion` 的问题同步到 Dashboard（如果 Dashboard 后续启动的话）。
+**答案格式**：
+- 多问题答案: `[{"questionId":"q-0","selectedValues":["opt1"],"customText":""},{"questionId":"q-1","selectedValues":["opt2"],"customText":""}]`
+- 单问题答案: `{"selectedValues":["opt1"],"customText":""}`
+
+CC 读取答案后根据 `selectedValues` 中的选项值继续执行。
+
+**Dashboard 未运行时回退到 `AskUserQuestion`**：Hook 会自动将 `AskUserQuestion` 的问题同步到 Dashboard（如果 Dashboard 后续启动的话）。
 
 **Hook 自动同步**（仅对 `AskUserQuestion` 生效）：
 - `PreToolUse` Hook（`push-question.mjs`）：`AskUserQuestion` 触发时自动推送问题到 Dashboard
