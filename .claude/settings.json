@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "SKILL_DIR=\"$(dirname \"$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)\")\" && [ -f \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" || true"
+            "command": "SKILL_DIR=$(find ~/.claude/plugins/cache -path \"*/workflow-skill/SKILL.md\" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname \"$SKILL_DIR\") && [ -f \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" || true"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "SKILL_DIR=\"$(dirname \"$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)\")\" && [ -f \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" || true"
+            "command": "SKILL_DIR=$(find ~/.claude/plugins/cache -path \"*/workflow-skill/SKILL.md\" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname \"$SKILL_DIR\") && [ -f \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" || true"
           }
         ]
       }

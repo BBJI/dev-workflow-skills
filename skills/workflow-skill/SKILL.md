@@ -361,8 +361,8 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
    - "都批准了，开始写代码" → 从阶段四（任务拆分）→ 阶段五（测试用例编写）→ 阶段六（TDD开发）
 
 4. **确认范围和自主级别**：
-   - 完全自主：以最少暂停运行所有阶段
-   - 半自主（默认）：每个阶段检查点暂停等待用户审批
+   - 完全自主（默认）：以最少暂停运行所有阶段
+   - 半自主：每个阶段检查点暂停等待用户审批
    - 手动：每次执行一个阶段，等待用户指令
 
 5. **完善工作流状态**：此时状态文件已由步骤1创建，根据步骤2~4的交互结果更新状态文件（项目类型、入口点、自主级别等），然后开始第一阶段。
@@ -377,8 +377,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 1. **创建状态文件**：使用 `notify-state.mjs` 初始化状态文件：
    ```bash
-   node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-     --type init --state-json '完整初始状态JSON'
+   node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type init --state-json "完整初始状态JSON"
    ```
    初始状态 JSON 结构见下方"状态文件结构"。所有阶段 status 设为 "pending"（新项目阶段零设为 "skipped"，已有项目阶段零设为 "pending"），consensusTracker 和 bugTracker 设为 null，activityLog 为空数组。
 
@@ -386,7 +385,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
    ```bash
    node "$SKILL_DIR/dashboard/server.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --port 3456
    ```
-   - `$SKILL_DIR` = 本 SKILL.md 文件所在的目录。使用 Bash 工具执行时，可通过 `dirname` 定位：先执行 `SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -not -path '*/.claude/skills/*' -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"` 获取路径，然后使用 `node "$SKILL_DIR/dashboard/server.mjs" ...` 启动
+   - `$SKILL_DIR` = 本 SKILL.md 文件所在的目录。使用 Bash 工具执行时定位方法：先执行 `SKILL_DIR=$(find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -not -path "*/.claude/skills/*" -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname "$SKILL_DIR")` 获取路径，然后使用 `node "$SKILL_DIR/dashboard/server.mjs" ...` 启动。**注意**：避免在命令中使用嵌套引号（如 `$(dirname "$(find ...)")`），在 Windows Git Bash 中会导致 EOF 错误；应使用 `&&` 链式调用代替嵌套。
    - 使用 Bash 工具以后台方式启动（`&` 后缀，不等待进程结束）
    - 如果端口 3456 被占用，服务器会自动尝试 3457-3465
 
@@ -404,8 +403,8 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
    ```bash
    # 等待服务器启动并读取端口号
    PORT=$(cat .dws/{项目名}/.dashboard.port 2>/dev/null || echo 3456)
-   # 通过直接写入状态文件补充 dashboardUrl（读取现有状态，添加 dashboardUrl 字段）
-   node -e "const f='.dws/{项目名}/workflow-state.json';const s=JSON.parse(require('fs').readFileSync(f,'utf-8'));s.dashboardUrl='http://localhost:'+$PORT;require('fs').writeFileSync(f,JSON.stringify(s,null,2))"
+   # 通过 notify-state.mjs 补充 dashboardUrl
+   node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type dashboard-url --url "http://localhost:$PORT"
    ```
 
 4. **检查点提醒**：在每个检查点暂停等待用户时，附加一行提示：`📊 Dashboard: http://localhost:{端口号}`，提醒用户可以查看实时进度。
@@ -487,7 +486,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 **定位脚本路径**（与 server.mjs 同目录）：
 ```bash
-SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -not -path '*/.claude/skills/*' -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"
+SKILL_DIR=$(find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -not -path "*/.claude/skills/*" -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname "$SKILL_DIR")
 ```
 
 **约定**：以下所有示例中，`$SKILL_DIR` 为上述路径，`$PROJECT_ROOT` 为项目根目录，`$PROJECT_NAME` 为项目名。
@@ -699,7 +698,7 @@ fi
         "hooks": [
           {
             "type": "command",
-            "command": "SKILL_DIR=\"$(dirname \"$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -not -path '*/.claude/skills/*' -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)\")\" && [ -f \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" || true"
+            "command": "SKILL_DIR=$(find ~/.claude/plugins/cache -path \"*/workflow-skill/SKILL.md\" -not -path \"*/.claude/skills/*\" -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path \"*/workflow-skill/SKILL.md\" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname \"$SKILL_DIR\") && [ -f \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" || true"
           }
         ]
       }
@@ -710,7 +709,7 @@ fi
         "hooks": [
           {
             "type": "command",
-            "command": "SKILL_DIR=\"$(dirname \"$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -not -path '*/.claude/skills/*' -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)\")\" && [ -f \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" || true"
+            "command": "SKILL_DIR=$(find ~/.claude/plugins/cache -path \"*/workflow-skill/SKILL.md\" -not -path \"*/.claude/skills/*\" -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path \"*/workflow-skill/SKILL.md\" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname \"$SKILL_DIR\") && [ -f \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" || true"
           }
         ]
       }

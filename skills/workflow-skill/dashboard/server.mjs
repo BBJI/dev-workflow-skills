@@ -14,9 +14,18 @@ import { resolve, join, extname } from 'path';
 import { createServer } from 'http';
 import { exec } from 'child_process';
 
+// ── Git Bash path conversion (Windows) ──────────────
+// Converts /d/project/... to D:\project\... on Windows
+function toWinPath(p) {
+  if (!p) return p;
+  if (process.platform !== 'win32') return p;
+  // Match Git Bash /drive-letter/path pattern: /c/Users/... → C:\Users\...
+  return p.replace(/^\/([a-zA-Z])(\/|$)/, (_, drive, sep) => drive.toUpperCase() + ':' + (sep ? '\\' : ''));
+}
+
 const args = parseArgs();
 const PORT = args.port || parseInt(process.env.DWS_PORT) || 3456;
-const PROJECT_ROOT = resolve(args['project-root'] || process.cwd());
+const PROJECT_ROOT = resolve(toWinPath(args['project-root']) || process.cwd());
 const PROJECT_NAME = args['project-name'] || 'default';
 const DWS_DIR = join(PROJECT_ROOT, '.dws', PROJECT_NAME);
 const STATE_FILE = join(DWS_DIR, 'workflow-state.json');
@@ -397,6 +406,15 @@ app.post('/api/state/bug', (req, res) => {
     const level = remainingBugs === 0 ? 'success' : newBugs > 0 ? 'error' : 'info';
     pushActivity(state, 7, 'test-round', `第${round}轮: ${newBugs}新Bug, ${fixedBugs}已修复, ${remainingBugs}剩余`, level);
   });
+  if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
+  res.json({ success: true });
+});
+
+// Set a single field on the state
+app.post('/api/state/field', (req, res) => {
+  const { field, value } = req.body;
+  if (!field) return res.status(400).json({ success: false, error: 'Missing field' });
+  const updated = updateState(state => { state[field] = value; });
   if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
   res.json({ success: true });
 });

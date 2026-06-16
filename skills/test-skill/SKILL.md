@@ -479,7 +479,7 @@ Bug修复后验证：
 
 **定位脚本**：
 ```bash
-SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"
+SKILL_DIR=$(find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname "$SKILL_DIR")
 ```
 
 **步骤开始时**（根据当前模式使用对应的 phase-id）：

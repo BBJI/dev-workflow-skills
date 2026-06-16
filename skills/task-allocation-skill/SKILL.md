@@ -280,7 +280,7 @@ T001 → T002 → T004 → T005 → T006（预计[X]天）
 
 **定位脚本**：
 ```bash
-SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"
+SKILL_DIR=$(find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname "$SKILL_DIR")
 ```
 
 **步骤开始时**：

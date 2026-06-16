@@ -6,6 +6,13 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from '
 import { join, resolve } from 'path';
 import { request } from 'http';
 
+// ── Git Bash path conversion (Windows) ──────────────
+function toWinPath(p) {
+  if (!p) return p;
+  if (process.platform !== 'win32') return p;
+  return p.replace(/^\/([a-zA-Z])(\/|$)/, (_, drive, sep) => drive.toUpperCase() + ':' + (sep ? '\\' : ''));
+}
+
 // ── Parse CLI args ──────────────────────────────────
 function parseArgs() {
   const args = {};
@@ -199,21 +206,33 @@ function fallbackInit(stateFile, initialState) {
   console.log('OK state initialized');
 }
 
+function fallbackSetField(stateFile, field, value) {
+  if (!existsSync(stateFile)) {
+    console.error('State file not found:', stateFile);
+    process.exit(1);
+  }
+  const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
+  state[field] = value;
+  writeStateFileAtomic(stateFile, state);
+  console.log(`OK ${field} set`);
+}
+
 // ── Main ────────────────────────────────────────────
 async function main() {
   const args = parseArgs();
   const type = args.type;
-  const projectRoot = resolve(args['project-root'] || process.cwd());
+  const projectRoot = resolve(toWinPath(args['project-root']) || process.cwd());
   const projectName = args['project-name'] || 'default';
   const stateFile = join(projectRoot, '.dws', projectName, 'workflow-state.json');
 
   if (!type) {
-    console.error('Usage: notify-state.mjs --type step|phase|overall|activity|init [options]');
-    console.error('  --type step     --phase-id N --step-id xxx --status in-progress|completed [--detail ...] [--result ...]');
-    console.error('  --type phase    --phase-id N --status in-progress|completed [--artifacts ...]');
-    console.error('  --type overall  [--current-phase N] [--overall-status ...] [--current-iteration N] [--total-iterations N]');
-    console.error('  --type activity --phase N --action xxx --message xxx [--level info|success|warning|error]');
-    console.error('  --type init     --state-json \'{"projectName":...}\'');
+    console.error('Usage: notify-state.mjs --type step|phase|overall|activity|init|dashboard-url [options]');
+    console.error('  --type step          --phase-id N --step-id xxx --status in-progress|completed [--detail ...] [--result ...]');
+    console.error('  --type phase         --phase-id N --status in-progress|completed [--artifacts ...]');
+    console.error('  --type overall       [--current-phase N] [--overall-status ...] [--current-iteration N] [--total-iterations N]');
+    console.error('  --type activity      --phase N --action xxx --message xxx [--level info|success|warning|error]');
+    console.error('  --type init          --state-json \'{"projectName":...}\'');
+    console.error('  --type dashboard-url --url http://localhost:PORT');
     process.exit(1);
   }
 
@@ -267,6 +286,10 @@ async function main() {
           console.error('Invalid --state-json'); process.exit(1);
         }
         break;
+      case 'dashboard-url':
+        path = '/api/state/field';
+        body = { field: 'dashboardUrl', value: args.url };
+        break;
       default:
         console.error('Unknown type:', type); process.exit(1);
     }
@@ -305,6 +328,9 @@ async function main() {
       } catch {
         console.error('Invalid --state-json'); process.exit(1);
       }
+      break;
+    case 'dashboard-url':
+      fallbackSetField(stateFile, 'dashboardUrl', args.url);
       break;
   }
 }

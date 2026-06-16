@@ -15,14 +15,13 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, LSP, Agent,
 
 1. 定位脚本路径：
    ```bash
-   SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -not -path '*/.claude/skills/*' -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"
-   echo "SKILL_DIR=$SKILL_DIR"
+   SKILL_DIR=$(find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -not -path "*/.claude/skills/*" -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname "$SKILL_DIR") && echo "SKILL_DIR=$SKILL_DIR"
    ```
+   **注意**：避免使用嵌套引号（如 `$(dirname "$(find ...)")`），在 Windows Git Bash 中会导致 EOF 错误。
 
 2. 创建初始状态文件（项目名先从用户描述中提炼，后续可更新）：
    ```bash
-   node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-     --type init --state-json '{完整初始状态JSON}'
+   node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type init --state-json "{完整初始状态JSON}"
    ```
 
 3. 在后台启动 Dashboard 服务器：
@@ -50,7 +49,7 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, LSP, Agent,
 每个阶段的门控条件必须满足才能进入下一阶段。共识达成后先编写测试用例，再以TDD模式开发，测试验证发现Bug时反馈给开发修复，形成收敛闭环。
 
 ### 3. 检查点
-在半自主模式下，每个阶段完成后暂停等待用户确认。
+默认全自主模式，仅最终交付检查点暂停。如用户指定半自主模式，则每个阶段完成后暂停等待用户确认。
 
 ---
 
