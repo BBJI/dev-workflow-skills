@@ -12,6 +12,7 @@ import { watch } from 'chokidar';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'fs';
 import { resolve, join, extname } from 'path';
 import { createServer } from 'http';
+import { exec } from 'child_process';
 
 const args = parseArgs();
 const PORT = args.port || parseInt(process.env.DWS_PORT) || 3456;
@@ -553,6 +554,16 @@ app.get('/artifacts/*', (req, res) => {
   }
 });
 
+// ── Open browser ────────────────────────────────────
+function openBrowser(url) {
+  const cmd = process.platform === 'win32' ? `start ${url}`
+    : process.platform === 'darwin' ? `open ${url}`
+    : `xdg-open ${url}`;
+  exec(cmd, (err) => {
+    if (err) console.log(`  (Could not auto-open browser: ${err.message})`);
+  });
+}
+
 // ── Server startup ──────────────────────────────────
 function startServer(port) {
   server.listen(port, () => {
@@ -571,6 +582,9 @@ function startServer(port) {
 
     // Try to load initial state
     currentState = readStateFile();
+
+    // Auto-open browser
+    openBrowser(`http://localhost:${port}`);
   });
 
   server.on('error', (err) => {
