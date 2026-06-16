@@ -300,6 +300,18 @@ install_claude() {
     [ -d "$skill_dir" ] && cp -r "$skill_dir" "$CACHE_DIR/.claude/skills/"
   done
 
+  # Install dashboard dependencies in .claude/skills copy too (copy may skip node_modules on Windows)
+  CLAUDE_DASHBOARD_DIR="$CACHE_DIR/.claude/skills/workflow-skill/dashboard"
+  if [ -d "$CLAUDE_DASHBOARD_DIR" ] && [ -f "$CLAUDE_DASHBOARD_DIR/package.json" ] && [ ! -d "$CLAUDE_DASHBOARD_DIR/node_modules" ]; then
+    echo "  → Installing dashboard dependencies in .claude/skills copy..."
+    (cd "$CLAUDE_DASHBOARD_DIR" && npm install --omit=dev 2>/dev/null)
+    if [ -d "$CLAUDE_DASHBOARD_DIR/node_modules" ]; then
+      echo "  ✅ Dashboard dependencies installed in .claude/skills"
+    else
+      echo "  ⚠️  Dashboard dependencies installation in .claude/skills failed"
+    fi
+  fi
+
   # 更新 installed_plugins.json
   update_installed_plugins "$VERSION" "$GIT_SHA" "$CACHE_DIR"
 

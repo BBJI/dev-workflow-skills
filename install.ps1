@@ -314,6 +314,20 @@ if ($Claude) {
             }
         }
 
+        # Install dashboard dependencies in .claude/skills copy too (Windows path length may skip node_modules during Copy-Item)
+        $claudeDashboardDir = Join-Path $claudeSkillsDir "workflow-skill\dashboard"
+        if ((Test-Path $claudeDashboardDir) -and (Test-Path (Join-Path $claudeDashboardDir "package.json")) -and -not (Test-Path (Join-Path $claudeDashboardDir "node_modules"))) {
+            Write-Host "  Installing dashboard dependencies in .claude/skills copy..." -ForegroundColor Gray
+            Push-Location $claudeDashboardDir
+            & npm install --omit=dev 2>$null
+            if (Test-Path (Join-Path $claudeDashboardDir "node_modules")) {
+                Write-Host "  [OK] Dashboard dependencies installed in .claude/skills" -ForegroundColor Green
+            } else {
+                Write-Host "  [WARN] Dashboard dependencies installation in .claude/skills failed" -ForegroundColor Yellow
+            }
+            Pop-Location
+        }
+
         # 更新 installed_plugins.json
         Run-NodeScript $NodeUpdateInstalledPlugin @($SETTINGS_FILE, $PLUGIN_NAME, $cacheDir, $version, $gitSha)
 

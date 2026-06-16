@@ -381,7 +381,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
    ```bash
    node "{本文件所在目录}/dashboard/server.mjs" --project-root "{项目根目录}" --project-name "{项目名}" --port 3456
    ```
-   - `{本文件所在目录}` = 本 SKILL.md 文件所在的目录。使用 Bash 工具执行时，可通过 `dirname` 定位：先执行 `SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null)")"` 获取路径，然后使用 `node "$SKILL_DIR/dashboard/server.mjs" ...` 启动
+   - `{本文件所在目录}` = 本 SKILL.md 文件所在的目录。使用 Bash 工具执行时，可通过 `dirname` 定位：先执行 `SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -not -path '*/.claude/skills/*' -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"` 获取路径，然后使用 `node "$SKILL_DIR/dashboard/server.mjs" ...` 启动
    - 使用 Bash 工具以后台方式启动（`&` 后缀，不等待进程结束）
    - 如果端口 3456 被占用，服务器会自动尝试 3457-3465
 
@@ -482,7 +482,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 **定位脚本路径**（与 server.mjs 同目录）：
 ```bash
-SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"
+SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -not -path '*/.claude/skills/*' -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"
 ```
 
 **约定**：以下所有示例中，`$SKILL_DIR` 为上述路径，`$PROJECT_ROOT` 为项目根目录，`$PROJECT_NAME` 为项目名。
@@ -694,7 +694,7 @@ fi
         "hooks": [
           {
             "type": "command",
-            "command": "SKILL_DIR=\"$(dirname \"$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)\")\" && [ -f \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" || true"
+            "command": "SKILL_DIR=\"$(dirname \"$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -not -path '*/.claude/skills/*' -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)\")\" && [ -f \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/push-question.mjs\" || true"
           }
         ]
       }
@@ -705,7 +705,7 @@ fi
         "hooks": [
           {
             "type": "command",
-            "command": "SKILL_DIR=\"$(dirname \"$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)\")\" && [ -f \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" || true"
+            "command": "SKILL_DIR=\"$(dirname \"$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -not -path '*/.claude/skills/*' -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)\")\" && [ -f \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" ] && node \"$SKILL_DIR/dashboard/hooks/clear-question.mjs\" || true"
           }
         ]
       }
