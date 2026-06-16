@@ -9,8 +9,8 @@ try {
 
 import express from 'express';
 import { watch } from 'chokidar';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { resolve, join, extname, relative } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'fs';
+import { resolve, join, extname } from 'path';
 import { createServer } from 'http';
 
 const args = parseArgs();
@@ -29,7 +29,7 @@ app.use(express.json());
 
 const clients = new Set();
 let currentState = null;
-let debounceTimer = null;
+let lastStateHash = '';
 
 // ── CLI arg parser ──────────────────────────────────
 function parseArgs() {
@@ -65,15 +65,53 @@ const MIME = {
   '.js': 'application/javascript; charset=utf-8',
 };
 
-// ── State file reading ──────────────────────────────
+// ── State file reading (with retry for atomic writes) ──
 function readStateFile() {
-  try {
-    if (!existsSync(STATE_FILE)) return null;
-    const raw = readFileSync(STATE_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      if (!existsSync(STATE_FILE)) return null;
+      const raw = readFileSync(STATE_FILE, 'utf-8');
+      return JSON.parse(raw);
+    } catch {
+      if (attempt === 0) continue; // file may be mid-atomic-rename
+    }
   }
+  return null;
+}
+
+// ── Atomic state file write ─────────────────────────
+function writeStateFile(state) {
+  const tmp = STATE_FILE + '.tmp';
+  const data = JSON.stringify(state, null, 2);
+  writeFileSync(tmp, data, 'utf-8');
+  renameSync(tmp, STATE_FILE);
+}
+
+// ── Activity log helper ─────────────────────────────
+function pushActivity(state, phase, action, message, level) {
+  state.activityLog.push({
+    timestamp: new Date().toISOString(),
+    phase,
+    action,
+    message,
+    level: level || 'info'
+  });
+  if (state.activityLog.length > 200) {
+    state.activityLog = state.activityLog.slice(-200);
+  }
+}
+
+// ── Shared: apply state mutation + persist + broadcast ──
+function mutateState(fn) {
+  const state = readStateFile();
+  if (!state) return null;
+  fn(state);
+  state.updatedAt = new Date().toISOString();
+  writeStateFile(state);
+  currentState = state;
+  lastStateHash = computeHash(JSON.stringify(state));
+  broadcastState(state);
+  return state;
 }
 
 // ── SSE broadcast ───────────────────────────────────
@@ -99,8 +137,6 @@ function broadcastError(message) {
 }
 
 // ── File change detection ────────────────────────────
-let lastStateHash = '';
-
 function computeHash(str) {
   let h = 0;
   for (let i = 0; i < str.length; i++) {
@@ -124,12 +160,11 @@ function checkAndBroadcast() {
 }
 
 function startWatcher() {
-  // Primary: chokidar with polling for cross-platform reliability
   const watcher = watch(STATE_FILE, {
     persistent: true,
     ignoreInitial: false,
     usePolling: true,
-    interval: 500,
+    interval: 300,
   });
 
   watcher.on('add', checkAndBroadcast);
@@ -139,11 +174,13 @@ function startWatcher() {
     console.error('Watcher error:', err.message);
   });
 
-  // Fallback: periodic poll (catches changes chokidar may miss on Windows)
-  setInterval(checkAndBroadcast, 2000);
+  // Fallback poll (catches changes API-based writes may trigger chokidar to miss)
+  setInterval(checkAndBroadcast, 1000);
 }
 
+// ══════════════════════════════════════════════════════
 // ── Routes ──────────────────────────────────────────
+// ══════════════════════════════════════════════════════
 
 // Dashboard page
 app.get('/', (_req, res) => {
@@ -165,148 +202,281 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', project: PROJECT_NAME, uptime: process.uptime() });
 });
 
+// ══════════════════════════════════════════════════════
+// ── State Mutation API ──────────────────────────────
+// ══════════════════════════════════════════════════════
+
+// Initialize state file
+app.post('/api/state/init', (req, res) => {
+  const state = req.body;
+  if (!state || !state.projectName) {
+    return res.status(400).json({ success: false, error: 'Missing state object' });
+  }
+  mkdirSync(DWS_DIR, { recursive: true });
+  writeStateFile(state);
+  currentState = state;
+  lastStateHash = computeHash(JSON.stringify(state));
+  broadcastState(state);
+  res.json({ success: true });
+});
+
+// Update step status
+app.post('/api/state/step', (req, res) => {
+  const { phaseId, stepId, status, detail, result } = req.body;
+  if (stepId === undefined || !status) {
+    return res.status(400).json({ success: false, error: 'Missing stepId or status' });
+  }
+  const updated = mutateState(state => {
+    const phase = (state.phases || []).find(p => p.id === phaseId);
+    if (!phase) return;
+    const step = (phase.steps || []).find(s => s.id === stepId);
+    if (!step) return;
+
+    const prevStatus = step.status;
+    step.status = status;
+    const now = new Date().toISOString();
+
+    if (status === 'in-progress' && !step.startedAt) {
+      step.startedAt = now;
+    }
+    if (['completed', 'blocked', 'skipped'].includes(status)) {
+      step.completedAt = now;
+    }
+    if (detail !== undefined) step.detail = detail;
+    if (result !== undefined) step.result = result;
+
+    // Activity log for state transitions
+    if (prevStatus !== status) {
+      const level = status === 'completed' ? 'success' : status === 'blocked' ? 'error' : 'info';
+      pushActivity(state, phaseId ?? state.currentPhase, 'step-' + status, step.name, level);
+    }
+  });
+  if (!updated) return res.status(404).json({ success: false, error: 'State file not found or step not found' });
+  res.json({ success: true });
+});
+
+// Update phase status
+app.post('/api/state/phase', (req, res) => {
+  const { phaseId, status, artifacts } = req.body;
+  if (phaseId === undefined || !status) {
+    return res.status(400).json({ success: false, error: 'Missing phaseId or status' });
+  }
+  const updated = mutateState(state => {
+    const phase = (state.phases || []).find(p => p.id === phaseId);
+    if (!phase) return;
+
+    phase.status = status;
+    const now = new Date().toISOString();
+
+    if (status === 'in-progress' && !phase.startedAt) {
+      phase.startedAt = now;
+      // Mark first step as in-progress
+      if (phase.steps && phase.steps.length > 0 && phase.steps[0].status === 'pending') {
+        phase.steps[0].status = 'in-progress';
+        phase.steps[0].startedAt = now;
+      }
+    }
+    if (['completed', 'skipped'].includes(status)) {
+      phase.completedAt = now;
+      // Mark all incomplete steps as completed
+      if (phase.steps) {
+        for (const step of phase.steps) {
+          if (step.status !== 'completed' && step.status !== 'skipped') {
+            step.status = status === 'skipped' ? 'skipped' : 'completed';
+            if (!step.startedAt) step.startedAt = now;
+            step.completedAt = now;
+          }
+        }
+      }
+    }
+    if (artifacts) phase.artifacts = artifacts;
+
+    const level = status === 'completed' ? 'success' : status === 'blocked' ? 'error' : 'info';
+    pushActivity(state, phaseId, 'phase-' + status, phase.name, level);
+  });
+  if (!updated) return res.status(404).json({ success: false, error: 'State file not found or phase not found' });
+  res.json({ success: true });
+});
+
+// Update overall workflow status
+app.post('/api/state/overall', (req, res) => {
+  const { currentPhase, overallStatus, currentIteration, totalIterations } = req.body;
+  const updated = mutateState(state => {
+    if (currentPhase !== undefined) state.currentPhase = currentPhase;
+    if (overallStatus !== undefined) state.overallStatus = overallStatus;
+    if (currentIteration !== undefined) state.currentIteration = currentIteration;
+    if (totalIterations !== undefined) state.totalIterations = totalIterations;
+
+    pushActivity(state, currentPhase ?? state.currentPhase, 'status-update', overallStatus || 'in-progress', 'info');
+  });
+  if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
+  res.json({ success: true });
+});
+
+// Add activity log entry (supports single or batch)
+app.post('/api/state/activity', (req, res) => {
+  const entries = Array.isArray(req.body) ? req.body : [req.body];
+  if (entries.length === 0) {
+    return res.status(400).json({ success: false, error: 'Empty activity entries' });
+  }
+  const updated = mutateState(state => {
+    for (const entry of entries) {
+      if (!entry.action || !entry.message) continue;
+      pushActivity(state, entry.phase ?? state.currentPhase, entry.action, entry.message, entry.level || 'info');
+    }
+  });
+  if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
+  res.json({ success: true });
+});
+
+// Update consensus tracker (phase 3)
+app.post('/api/state/consensus', (req, res) => {
+  const { round, fatalIssues, highIssues, mediumIssues, lowIssues, status, reqAdjustments, designAdjustments, details } = req.body;
+  if (round === undefined) {
+    return res.status(400).json({ success: false, error: 'Missing round' });
+  }
+  const updated = mutateState(state => {
+    state.overallStatus = 'consensus-loop';
+    if (!state.consensusTracker) {
+      state.consensusTracker = { rounds: [], currentRound: 0, maxRounds: 5, status: 'in-progress' };
+    }
+    state.consensusTracker.currentRound = round;
+    state.consensusTracker.rounds.push({
+      round,
+      fatalIssues: fatalIssues || 0,
+      highIssues: highIssues || 0,
+      mediumIssues: mediumIssues || 0,
+      lowIssues: lowIssues || 0,
+      status: status || 'consensus-not-reached',
+      reqAdjustments: reqAdjustments || 0,
+      designAdjustments: designAdjustments || 0,
+      details: details || null
+    });
+    if (status === 'consensus-reached') {
+      state.consensusTracker.status = 'consensus-reached';
+      state.overallStatus = 'in-progress';
+    } else if (round >= 5) {
+      state.consensusTracker.status = 'escalated';
+    }
+    const level = status === 'consensus-reached' ? 'success' : fatalIssues > 0 ? 'warning' : 'info';
+    pushActivity(state, 3, 'review-round', `第${round}轮: ${fatalIssues}致命, ${highIssues}高优先级问题`, level);
+  });
+  if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
+  res.json({ success: true });
+});
+
+// Update bug tracker (phases 6-7)
+app.post('/api/state/bug', (req, res) => {
+  const { round, newBugs, fixedBugs, remainingBugs, iterationId, details } = req.body;
+  if (round === undefined) {
+    return res.status(400).json({ success: false, error: 'Missing round' });
+  }
+  const updated = mutateState(state => {
+    state.overallStatus = 'tdd-loop';
+    if (!state.bugTracker) {
+      state.bugTracker = { rounds: [], currentRound: 0, maxRounds: 3, status: 'in-progress' };
+    }
+    state.bugTracker.currentRound = round;
+    state.bugTracker.rounds.push({
+      round,
+      newBugs: newBugs || 0,
+      fixedBugs: fixedBugs || 0,
+      remainingBugs: remainingBugs || 0,
+      iterationId: iterationId || null,
+      details: details || null
+    });
+    if (remainingBugs === 0) {
+      state.bugTracker.status = 'stable';
+      state.overallStatus = 'in-progress';
+    } else if (round >= 3 && remainingBugs > 0) {
+      state.bugTracker.status = 'escalated';
+    } else {
+      state.bugTracker.status = 'converging';
+    }
+    const level = remainingBugs === 0 ? 'success' : newBugs > 0 ? 'error' : 'info';
+    pushActivity(state, 7, 'test-round', `第${round}轮: ${newBugs}新Bug, ${fixedBugs}已修复, ${remainingBugs}剩余`, level);
+  });
+  if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
+  res.json({ success: true });
+});
+
+// ══════════════════════════════════════════════════════
+// ── Question API ────────────────────────────────────
+// ══════════════════════════════════════════════════════
+
 // Question answer API
 app.post('/api/question/answer', (req, res) => {
   const { questionId, selectedValues, customText } = req.body;
   if (!questionId || !Array.isArray(selectedValues)) {
     return res.status(400).json({ success: false, error: 'Missing questionId or selectedValues' });
   }
-  const state = readStateFile();
-  if (!state || !state.pendingQuestion) {
-    return res.status(404).json({ success: false, error: 'Question not found' });
-  }
-  if (state.pendingQuestion.id !== questionId) {
-    return res.status(404).json({ success: false, error: 'Question not found' });
-  }
-  if (state.pendingQuestion.status === 'answered') {
-    return res.status(409).json({ success: false, error: 'Question already answered' });
-  }
+  let answerData = null;
+  const updated = mutateState(state => {
+    if (!state.pendingQuestion || state.pendingQuestion.id !== questionId) return;
+    if (state.pendingQuestion.status === 'answered') return;
 
-  state.pendingQuestion.status = 'answered';
-  state.pendingQuestion.answer = {
-    selectedValues,
-    customText: customText || '',
-    answeredAt: new Date().toISOString()
-  };
-  state.updatedAt = new Date().toISOString();
-
-  state.activityLog.push({
-    timestamp: new Date().toISOString(),
-    phase: state.currentPhase,
-    action: 'question-answered',
-    message: `回答: ${selectedValues.join(', ')}${customText ? ' + 自定义' : ''}`,
-    level: 'info'
+    state.pendingQuestion.status = 'answered';
+    state.pendingQuestion.answer = {
+      selectedValues,
+      customText: customText || '',
+      answeredAt: new Date().toISOString()
+    };
+    answerData = state.pendingQuestion.answer;
+    pushActivity(state, state.currentPhase, 'question-answered', `回答: ${selectedValues.join(', ')}${customText ? ' + 自定义' : ''}`, 'info');
   });
-  if (state.activityLog.length > 200) {
-    state.activityLog = state.activityLog.slice(-200);
-  }
-
-  try {
-    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-  } catch (e) {
-    return res.status(500).json({ success: false, error: 'Failed to write state' });
-  }
-  currentState = state;
-  broadcastState(state);
-  res.json({ success: true, answer: state.pendingQuestion.answer });
+  if (!updated || !answerData) return res.status(404).json({ success: false, error: 'Question not found or already answered' });
+  res.json({ success: true, answer: answerData });
 });
 
-// Question push API — Hook pushes AskUserQuestion data here
+// Question push API
 app.post('/api/question/push', (req, res) => {
   const { id, question, header, multiSelect, options, allowCustom } = req.body;
   if (!question) {
     return res.status(400).json({ success: false, error: 'Missing question' });
   }
-  const state = readStateFile();
-  if (!state) {
-    return res.status(404).json({ success: false, error: 'State file not found' });
-  }
-
-  // If there's already a pending question, clear it first
-  if (state.pendingQuestion && state.pendingQuestion.status === 'pending') {
-    state.activityLog.push({
-      timestamp: new Date().toISOString(),
-      phase: state.currentPhase,
-      action: 'question-superseded',
-      message: `前一个问题被新问题取代: ${state.pendingQuestion.question?.substring(0, 40)}`,
-      level: 'warning'
-    });
-  }
-
-  const questionId = id || `q-${String(Date.now()).slice(-6)}`;
-  state.pendingQuestion = {
-    id: questionId,
-    question,
-    header: header || 'CC 需要你的决策',
-    multiSelect: !!multiSelect,
-    options: (options || []).map((opt, i) => ({
-      value: opt.value || `opt-${i}`,
-      label: opt.label || opt.value || `选项 ${i + 1}`,
-      description: opt.description || ''
-    })),
-    allowCustom: allowCustom !== false,
-    status: 'pending',
-    answer: null,
-    createdAt: new Date().toISOString()
-  };
-  state.updatedAt = new Date().toISOString();
-
-  state.activityLog.push({
-    timestamp: new Date().toISOString(),
-    phase: state.currentPhase,
-    action: 'question-pushed',
-    message: `CC 提问: ${question.substring(0, 50)}`,
-    level: 'info'
+  let questionId = null;
+  const updated = mutateState(state => {
+    if (state.pendingQuestion && state.pendingQuestion.status === 'pending') {
+      pushActivity(state, state.currentPhase, 'question-superseded', `前一个问题被新问题取代: ${state.pendingQuestion.question?.substring(0, 40)}`, 'warning');
+    }
+    questionId = id || `q-${String(Date.now()).slice(-6)}`;
+    state.pendingQuestion = {
+      id: questionId,
+      question,
+      header: header || 'CC 需要你的决策',
+      multiSelect: !!multiSelect,
+      options: (options || []).map((opt, i) => ({
+        value: opt.value || `opt-${i}`,
+        label: opt.label || opt.value || `选项 ${i + 1}`,
+        description: opt.description || ''
+      })),
+      allowCustom: allowCustom !== false,
+      status: 'pending',
+      answer: null,
+      createdAt: new Date().toISOString()
+    };
+    pushActivity(state, state.currentPhase, 'question-pushed', `CC 提问: ${question.substring(0, 50)}`, 'info');
   });
-  if (state.activityLog.length > 200) {
-    state.activityLog = state.activityLog.slice(-200);
-  }
-
-  try {
-    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-  } catch (e) {
-    return res.status(500).json({ success: false, error: 'Failed to write state' });
-  }
-  currentState = state;
-  broadcastState(state);
+  if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
   res.json({ success: true, questionId });
 });
 
-// Question clear API — Hook clears question after AskUserQuestion completes
+// Question clear API
 app.post('/api/question/clear', (_req, res) => {
-  const state = readStateFile();
-  if (!state) {
-    return res.status(404).json({ success: false, error: 'State file not found' });
-  }
-
-  // Only clear if not answered (if answered, let the frontend handle it)
-  if (state.pendingQuestion && state.pendingQuestion.status !== 'answered') {
-    state.pendingQuestion = null;
-    state.updatedAt = new Date().toISOString();
-
-    state.activityLog.push({
-      timestamp: new Date().toISOString(),
-      phase: state.currentPhase,
-      action: 'question-cleared',
-      message: '问题已清理（CLI 已处理）',
-      level: 'info'
-    });
-    if (state.activityLog.length > 200) {
-      state.activityLog = state.activityLog.slice(-200);
+  const updated = mutateState(state => {
+    if (state.pendingQuestion && state.pendingQuestion.status !== 'answered') {
+      state.pendingQuestion = null;
+      pushActivity(state, state.currentPhase, 'question-cleared', '问题已清理（CLI 已处理）', 'info');
     }
-
-    try {
-      writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-    } catch (e) {
-      return res.status(500).json({ success: false, error: 'Failed to write state' });
-    }
-    currentState = state;
-    broadcastState(state);
-  }
+  });
+  if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
   res.json({ success: true });
 });
 
-// SSE endpoint
+// ══════════════════════════════════════════════════════
+// ── SSE endpoint ────────────────────────────────────
+// ══════════════════════════════════════════════════════
+
 app.get('/events', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -346,7 +516,10 @@ app.get('/events', (req, res) => {
   });
 });
 
-// Artifact serving — paths are relative to PROJECT_ROOT (e.g. .dws/{project}/req/requirements.md)
+// ══════════════════════════════════════════════════════
+// ── Artifact serving ────────────────────────────────
+// ══════════════════════════════════════════════════════
+
 app.get('/artifacts/*', (req, res) => {
   const reqPath = req.params[0];
   const filePath = resolve(PROJECT_ROOT, reqPath);
@@ -366,7 +539,6 @@ app.get('/artifacts/*', (req, res) => {
   res.setHeader('Content-Type', mime);
 
   if (ext === '.md') {
-    // Serve markdown as raw text for client-side rendering
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     try {
       res.sendFile(filePath);

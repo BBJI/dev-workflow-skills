@@ -370,7 +370,12 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 在步骤4"初始化工作流状态"中，同时执行以下操作：
 
-1. **创建状态文件**：在 `.dws/{项目名}/workflow-state.json` 中写入初始状态。所有阶段 status 设为 "pending"（新项目阶段零设为 "skipped"，已有项目阶段零设为 "pending"），consensusTracker 和 bugTracker 设为 null，activityLog 为空数组。完整 JSON 结构见下方"状态文件结构"。
+1. **创建状态文件**：使用 `notify-state.mjs` 初始化状态文件：
+   ```bash
+   node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+     --type init --state-json '完整初始状态JSON'
+   ```
+   初始状态 JSON 结构见下方"状态文件结构"。所有阶段 status 设为 "pending"（新项目阶段零设为 "skipped"，已有项目阶段零设为 "pending"），consensusTracker 和 bugTracker 设为 null，activityLog 为空数组。
 
 2. **启动仪表盘服务器**：在后台启动 Node.js 服务器：
    ```bash
@@ -390,7 +395,13 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
    ╚══════════════════════════════════════════════════════════╝
    ```
 
-   同时，在 `workflow-state.json` 中记录 `dashboardUrl` 字段（值为 `http://localhost:{端口号}`），方便前端展示。
+   同时，使用 `notify-state.mjs` 记录 `dashboardUrl`：
+   ```bash
+   # 等待服务器启动并读取端口号
+   PORT=$(cat .dws/{项目名}/.dashboard.port 2>/dev/null || echo 3456)
+   # 通过直接写入状态文件补充 dashboardUrl（读取现有状态，添加 dashboardUrl 字段）
+   node -e "const f='.dws/{项目名}/workflow-state.json';const s=JSON.parse(require('fs').readFileSync(f,'utf-8'));s.dashboardUrl='http://localhost:'+$PORT;require('fs').writeFileSync(f,JSON.stringify(s,null,2))"
+   ```
 
 4. **检查点提醒**：在每个检查点暂停等待用户时，附加一行提示：`📊 Dashboard: http://localhost:{端口号}`，提醒用户可以查看实时进度。
 
@@ -465,65 +476,103 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 | 6-TDD开发 | dev-step-1~6: 理解任务/探索/TDD实现/补充测试/自检/Bug修复 |
 | 7-测试验证 | test-verify-step-1~7: 计划/功能/非功能/视觉/回归/Bug报告/总结 |
 
+### 状态更新机制
+
+所有状态更新通过 `notify-state.mjs` 辅助脚本执行（位于 dashboard 目录下），而非直接操作 JSON 文件。该脚本会优先调用 Dashboard REST API 实现即时广播；若 Dashboard 未运行，则 fallback 到原子文件写入。
+
+**定位脚本路径**（与 server.mjs 同目录）：
+```bash
+SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"
+```
+
+**约定**：以下所有示例中，`$SKILL_DIR` 为上述路径，`$PROJECT_ROOT` 为项目根目录，`$PROJECT_NAME` 为项目名。
+
+**重要**：每个步骤状态变更时，**必须**立即调用 `notify-state.mjs`，确保 Dashboard 实时反映进度。不要等到阶段结束再批量更新。
+
 ### 阶段转换更新
 
-在每个阶段开始和完成时，读取并更新 `workflow-state.json`：
+**阶段开始时**（3 条命令，按顺序执行）：
+```bash
+# 1. 更新整体状态：设置当前阶段
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type overall --current-phase N --overall-status in-progress
 
-**阶段开始时**：
-1. 读取 `workflow-state.json`
-2. 设置 `currentPhase` 为当前阶段 ID
-3. 设置 `phases[N].status` 为 "in-progress"
-4. 设置 `phases[N].startedAt` 为当前 ISO 时间戳
-5. 设置 `phases[N].steps[0].status` 为 "in-progress"
-6. 更新 `updatedAt` 为当前时间
-7. 在 `activityLog` 末尾追加：`{ timestamp, phase: N, action: "phase-started", message: "开始{阶段名}", level: "info" }`
-8. 写回文件
+# 2. 更新阶段状态：标记阶段进行中（自动标记第一步为 in-progress）
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type phase --phase-id N --status in-progress
 
-**阶段完成时**：
-1. 读取 `workflow-state.json`
-2. 设置 `phases[N].status` 为 "completed"
-3. 设置 `phases[N].completedAt` 为当前 ISO 时间戳
-4. 将阶段内所有未完成的步骤 status 设为 "completed"
-5. 为每个已完成的步骤填写 `result` 字段，记录步骤执行的详细结果（如产出数量、关键决策、发现的问题等），确保用户在 Dashboard 中点击可看到有意义的详情
-6. 更新 `phases[N].artifacts` 为本阶段产出的所有制品
-7. 更新 `updatedAt`
-8. 在 `activityLog` 末尾追加：`{ timestamp, phase: N, action: "phase-completed", message: "完成{阶段名}", level: "success" }`
-9. 写回文件
+# 3. 追加活动日志
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type activity --phase N --action phase-started --message "开始{阶段名}" --level info
+```
+
+**阶段完成时**（2 条命令）：
+```bash
+# 1. 更新阶段状态：标记阶段完成（自动将未完成步骤标为 completed）+ 制品
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type phase --phase-id N --status completed --artifacts '[{"name":"文件名","path":"相对路径","type":"markdown","generatedAt":"ISO时间戳"}]'
+
+# 2. 追加活动日志
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type activity --phase N --action phase-completed --message "完成{阶段名}" --level success
+```
+
+**步骤状态更新**（在每个步骤开始和完成时）：
+```bash
+# 步骤开始
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type step --phase-id N --step-id {步骤ID} --status in-progress --detail "简要描述当前正在做什么"
+
+# 步骤完成
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type step --phase-id N --step-id {步骤ID} --status completed --result "步骤执行结果摘要"
+```
 
 ### 共识闭环更新（阶段三）
 
-在共识闭环中，每轮评审后更新状态：
+每轮评审后，调用 consensus API：
+```bash
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type consensus --round N --fatal-issues X --high-issues Y --medium-issues Z --low-issues W \
+  --status "consensus-not-reached|consensus-reached" \
+  --req-adjustments A --design-adjustments B \
+  --details '{"summary":"本轮评审概述","items":["具体问题1","具体问题2"],"metrics":{"覆盖需求%":"85%"}}'
+```
 
-1. 设置 `overallStatus` 为 "consensus-loop"
-2. 如果 `consensusTracker` 为 null，初始化：`{ rounds: [], currentRound: 0, maxRounds: 5, status: "in-progress" }`
-3. 递增 `consensusTracker.currentRound`
-4. 在 `consensusTracker.rounds` 末尾追加本轮数据：`{ round: N, fatalIssues: 数量, highIssues: 数量, mediumIssues: 数量, lowIssues: 数量, status: "consensus-not-reached"|"consensus-reached", reqAdjustments: 数量, designAdjustments: 数量, details: { summary: "本轮评审概述", items: ["具体问题1", "具体问题2"], metrics: { "覆盖需求%": "85%" } } }`（`details` 字段在 Dashboard 中点击轮次行可展开查看）
-5. 共识达成时：设置 `consensusTracker.status` 为 "consensus-reached"，本轮 `status` 为 "consensus-reached"，`overallStatus` 改回 "in-progress"
-6. 达到最大轮次仍未达成：设置 `consensusTracker.status` 为 "escalated"
-7. 追加活动日志：`{ timestamp, phase: 3, action: "review-round", message: "第N轮: X致命, Y高优先级问题", level: "info"|"warning"|"success" }`
-8. 写回文件
+- 共识达成时 `--status consensus-reached`，API 自动将 overallStatus 改回 in-progress
+- 达到最大轮次仍未达成，API 自动设置 escalated
 
 ### TDD 闭环更新（阶段六~七）
 
-在 TDD 闭环中，每轮测试验证后更新状态：
+每轮测试验证后，调用 bug API：
+```bash
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type bug --round N --new-bugs X --fixed-bugs Y --remaining-bugs Z \
+  --iteration-id "iter-N" \
+  --details '{"summary":"本轮测试概述","items":["Bug1: 描述","Bug2: 描述"],"metrics":{"通过率":"92%"}}'
+```
 
-1. 设置 `overallStatus` 为 "tdd-loop"
-2. 如果 `bugTracker` 为 null，初始化：`{ rounds: [], currentRound: 0, maxRounds: 3, status: "in-progress" }`
-3. 递增 `bugTracker.currentRound`
-4. 在 `bugTracker.rounds` 末尾追加本轮数据：`{ round: N, newBugs: 数量, fixedBugs: 数量, remainingBugs: 数量, iterationId: "iter-N", details: { summary: "本轮测试概述", items: ["Bug1: 描述", "Bug2: 描述"], metrics: { "通过率": "92%" } } }`（`details` 字段在 Dashboard 中点击轮次行可展开查看）
-5. Bug 为0且连续3轮无新Bug：设置 `bugTracker.status` 为 "stable"
-6. 3轮不收敛：设置 `bugTracker.status` 为 "escalated"
-7. 测试全部通过：设置 `overallStatus` 回 "in-progress"，`bugTracker.status` 为 "converging"
-8. 追加活动日志：`{ timestamp, phase: 7, action: "test-round", message: "第N轮: X新Bug, Y已修复, Z剩余", level: "info"|"success"|"error" }`
-9. 写回文件
+- remaining-bugs 为 0 时 API 自动设置 stable 状态
+- 连续 3 轮不收敛时 API 自动设置 escalated
 
 ### 工作流完成
 
-1. 设置 `overallStatus` 为 "completed"
-2. 设置 `completedAt` 为当前时间
-3. 追加活动日志：`{ timestamp, phase: currentPhase, action: "workflow-completed", message: "工作流完成", level: "success" }`
-4. 写回文件
-5. **主动关闭仪表盘**。工作流完成后自动终止 Dashboard 服务器进程，释放端口和资源。执行方式：运行 `kill $(cat .dws/{项目名}/.dashboard.pid)`（macOS/Linux）或停止对应进程（Windows）。关闭后追加活动日志：`{ timestamp, phase: currentPhase, action: "dashboard-stopped", message: "Dashboard 已关闭", level: "info" }`。
+```bash
+# 1. 更新整体状态为完成
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type overall --overall-status completed
+
+# 2. 追加活动日志
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type activity --phase {currentPhase} --action workflow-completed --message "工作流完成" --level success
+
+# 3. 主动关闭仪表盘
+kill $(cat .dws/{项目名}/.dashboard.pid) 2>/dev/null || taskkill /PID $(cat .dws/{项目名}/.dashboard.pid) 2>/dev/null || true
+
+# 4. 记录 Dashboard 关闭日志
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type activity --phase {currentPhase} --action dashboard-stopped --message "Dashboard 已关闭" --level info
+```
 
 ### 活动日志管理
 
@@ -540,9 +589,11 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 ### 容错
 
-- 如果 `workflow-state.json` 不存在（单独使用子技能时），跳过所有状态更新，不影响工作流正常执行
+- 如果 `workflow-state.json` 不存在（单独使用子技能时），`notify-state.mjs` 会报错但不影响工作流正常执行
+- 如果 Dashboard 服务器未运行，`notify-state.mjs` 自动 fallback 到直接原子文件写入
 - 如果写入失败，记录警告但不中断工作流
 - 状态更新与工作流执行解耦——状态更新是辅助性的，不是关键路径
+- `notify-state.mjs` 支持 Dashboard 未启动时独立运行，确保子技能单独使用时状态也能正确持久化
 
 ## 异常处理
 

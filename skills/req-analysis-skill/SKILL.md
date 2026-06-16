@@ -407,18 +407,29 @@ description: >
 
 ### 更新规则
 
+通过 `notify-state.mjs` 辅助脚本更新状态（Dashboard 运行时走 API 即时广播，未运行时 fallback 到原子文件写入）。
+
+**定位脚本**：
+```bash
+SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"
+```
+
 **步骤开始时**：
-1. 读取 `.dws/{项目名}/workflow-state.json`
-2. 找到 `phases[1].steps` 中对应步骤 ID 的条目
-3. 设置 `status` 为 "in-progress"，`startedAt` 为当前 ISO 时间戳
-4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 1, action: "step-started", message: "{步骤名}", level: "info" }`
-5. 更新 `updatedAt`，写回文件
+```bash
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type step --phase-id 1 --step-id {步骤ID} --status in-progress --detail "简要描述"
+```
 
 **步骤完成时**：
-1. 读取 `.dws/{项目名}/workflow-state.json`
-2. 找到对应步骤，设置 `status` 为 "completed"，`completedAt` 为当前 ISO 时间戳
-3. 将本步骤产出的文件添加到 `phases[1].artifacts` 数组（步骤六产出最多：需求文档、追溯矩阵、待决问题、原型图 HTML）
-4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 1, action: "step-completed", message: "{步骤名}", level: "success" }`
-5. 更新 `updatedAt`，写回文件
+```bash
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type step --phase-id 1 --step-id {步骤ID} --status completed --result "步骤执行结果摘要"
+```
 
-**activityLog 超过 200 条时**，删除最旧的条目。
+**追加活动日志**（步骤开始/完成时可选附加）：
+```bash
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type activity --phase 1 --action step-started --message "{步骤名}" --level info
+```
+
+> 步骤六产出最多制品：需求文档、追溯矩阵、待决问题、原型图 HTML，完成时务必在 `--result` 中列出。

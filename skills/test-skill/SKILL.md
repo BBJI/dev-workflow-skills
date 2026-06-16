@@ -475,20 +475,35 @@ Bug修复后验证：
 
 ### 更新规则
 
-**步骤开始时**：
-1. 读取 `.dws/{项目名}/workflow-state.json`
-2. 根据当前模式，找到 `phases[5]` 或 `phases[7]` 的 `steps` 中对应步骤 ID 的条目
-3. 设置 `status` 为 "in-progress"，`startedAt` 为当前 ISO 时间戳
-4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 当前阶段ID, action: "step-started", message: "{步骤名}", level: "info" }`
-5. 更新 `updatedAt`，写回文件
+通过 `notify-state.mjs` 辅助脚本更新状态（Dashboard 运行时走 API 即时广播，未运行时 fallback 到原子文件写入）。
 
-**步骤完成时**：
-1. 读取 `.dws/{项目名}/workflow-state.json`
-2. 找到对应步骤，设置 `status` 为 "completed"，`completedAt` 为当前 ISO 时间戳
-3. 将本步骤产出的文件添加到对应阶段的 `artifacts` 数组
-4. 在 `activityLog` 末尾追加：`{ timestamp, phase: 当前阶段ID, action: "step-completed", message: "{步骤名}", level: "success" }`
-5. 更新 `updatedAt`，写回文件
+**定位脚本**：
+```bash
+SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"
+```
 
-**测试验证模式特殊**：步骤六（Bug报告）完成时，如果发现了 Bug，追加活动日志：`{ timestamp, phase: 7, action: "bugs-found", message: "发现 X 个Bug（Y致命/Z高）", level: "warning" }`
+**步骤开始时**（根据当前模式使用对应的 phase-id）：
+```bash
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type step --phase-id {5或7} --step-id {步骤ID} --status in-progress --detail "简要描述"
+```
 
-**activityLog 超过 200 条时**，删除最旧的条目。
+**步骤完成时**（根据当前模式使用对应的 phase-id）：
+```bash
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type step --phase-id {5或7} --step-id {步骤ID} --status completed --result "步骤执行结果摘要"
+```
+
+**追加活动日志**（步骤开始/完成时可选附加）：
+```bash
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type activity --phase {5或7} --action step-started --message "{步骤名}" --level info
+```
+
+> **phase-id 说明**：测试用例编写模式使用 phase-id `5`，测试验证模式使用 phase-id `7`。请根据当前执行模式替换对应的 phase-id 值。
+
+**测试验证模式特殊**：步骤六（Bug报告）完成时，如果发现了 Bug，追加活动日志：
+```bash
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type activity --phase 7 --action bugs-found --message "发现 X 个Bug（Y致命/Z高）" --level warning
+```
