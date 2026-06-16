@@ -20,12 +20,8 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, LSP, Agent,
    **注意**：避免使用嵌套引号（如 `$(dirname "$(find ...)")`），在 Windows Git Bash 中会导致 EOF 错误。
 
 2. 创建初始状态文件（项目名先从用户描述中提炼，后续可更新）：
-   ```bash
-   echo '{完整初始状态JSON}' > /tmp/dws-init-state.json
-   node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type init --state-json @/tmp/dws-init-state.json
-   rm -f /tmp/dws-init-state.json
-   ```
-   **注意**：`--state-json` 推荐使用 `@文件路径` 方式，避免 Windows 命令行长度限制。
+   - 先用 **Write 工具**将初始状态 JSON 写入 `/tmp/dws-init-state.json`（**切勿用 echo 写入，JSON 中的引号会破坏 shell 命令**）
+   - 然后执行：`node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type init --state-json @/tmp/dws-init-state.json && rm -f /tmp/dws-init-state.json`
 
 3. 在后台启动 Dashboard 服务器：
    ```bash
