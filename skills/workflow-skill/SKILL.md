@@ -345,22 +345,27 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 用户发起工作流时，按以下顺序：
 
-1. **判断项目类型**：
+1. **立即启动 Dashboard**（在问任何问题之前）：
+   - 定位脚本路径并启动 Dashboard 服务器（详见下方"启动仪表盘"）
+   - 这确保用户从一开始就能在浏览器中看到实时进度
+   - **重要**：这是工作流的第一步，必须在任何交互之前完成
+
+2. **判断项目类型**：
    - 已有代码库？→ 先执行阶段零（项目规范生成），再进入阶段一
    - 全新项目？→ 直接进入阶段一，阶段零留到最后执行
 
-2. **确定入口点**：
+3. **确定入口点**：
    - "我有一个功能想法" → 从阶段一（需求分析）开始
    - "这是我的需求文档" → 从阶段二（设计）开始
    - "我有需求和设计" → 从阶段三（评估）开始
    - "都批准了，开始写代码" → 从阶段四（任务拆分）→ 阶段五（测试用例编写）→ 阶段六（TDD开发）
 
-3. **确认范围和自主级别**：
+4. **确认范围和自主级别**：
    - 完全自主：以最少暂停运行所有阶段
    - 半自主（默认）：每个阶段检查点暂停等待用户审批
    - 手动：每次执行一个阶段，等待用户指令
 
-4. **初始化工作流状态**并开始第一阶段。
+5. **完善工作流状态**：此时状态文件已由步骤1创建，根据步骤2~4的交互结果更新状态文件（项目类型、入口点、自主级别等），然后开始第一阶段。
 
 ## Dashboard 集成
 
@@ -368,7 +373,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 ### 启动仪表盘
 
-在步骤4"初始化工作流状态"中，同时执行以下操作：
+**在工作流启动的第一步（步骤1）立即执行以下操作，在任何交互之前：**
 
 1. **创建状态文件**：使用 `notify-state.mjs` 初始化状态文件：
    ```bash
@@ -379,9 +384,9 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 2. **启动仪表盘服务器**：在后台启动 Node.js 服务器：
    ```bash
-   node "{本文件所在目录}/dashboard/server.mjs" --project-root "{项目根目录}" --project-name "{项目名}" --port 3456
+   node "$SKILL_DIR/dashboard/server.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --port 3456
    ```
-   - `{本文件所在目录}` = 本 SKILL.md 文件所在的目录。使用 Bash 工具执行时，可通过 `dirname` 定位：先执行 `SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -not -path '*/.claude/skills/*' -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"` 获取路径，然后使用 `node "$SKILL_DIR/dashboard/server.mjs" ...` 启动
+   - `$SKILL_DIR` = 本 SKILL.md 文件所在的目录。使用 Bash 工具执行时，可通过 `dirname` 定位：先执行 `SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -not -path '*/.claude/skills/*' -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"` 获取路径，然后使用 `node "$SKILL_DIR/dashboard/server.mjs" ...` 启动
    - 使用 Bash 工具以后台方式启动（`&` 后缀，不等待进程结束）
    - 如果端口 3456 被占用，服务器会自动尝试 3457-3465
 

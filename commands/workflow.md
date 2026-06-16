@@ -9,6 +9,29 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, LSP, Agent,
 
 ## 执行流程
 
+### 0. 立即启动 Dashboard（在问任何问题之前）
+
+**这一步必须在所有其他操作之前执行。** 不要等到问完问题再启动 Dashboard。
+
+1. 定位脚本路径：
+   ```bash
+   SKILL_DIR="$(dirname "$(find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -not -path '*/.claude/skills/*' -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path '*/workflow-skill/SKILL.md' -print -quit 2>/dev/null || echo /dev/null)")"
+   echo "SKILL_DIR=$SKILL_DIR"
+   ```
+
+2. 创建初始状态文件（项目名先从用户描述中提炼，后续可更新）：
+   ```bash
+   node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+     --type init --state-json '{完整初始状态JSON}'
+   ```
+
+3. 在后台启动 Dashboard 服务器：
+   ```bash
+   node "$SKILL_DIR/dashboard/server.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --port 3456 &
+   ```
+
+4. 醒目地输出 Dashboard 地址（参见 SKILL.md 中的格式）
+
 ### 1. 判断项目类型
 - 已有代码库 → 先执行阶段零（项目规范生成），再进入需求分析
 - 全新项目 → 直接进入需求分析，最后执行阶段零
