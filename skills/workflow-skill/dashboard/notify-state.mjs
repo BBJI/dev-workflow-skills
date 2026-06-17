@@ -218,8 +218,8 @@ function fallbackSetField(stateFile, field, value) {
   console.log(`OK ${field} set`);
 }
 
-// ── Resolve state-json value (inline, @file, or stdin) ────
-function resolveStateJson(val) {
+// ── Resolve value (inline JSON, @file, or plain string) ────
+function resolveJsonOrFile(val) {
   if (!val) return null;
   // @path → read from file
   if (val.startsWith('@')) {
@@ -227,7 +227,7 @@ function resolveStateJson(val) {
     try {
       return readFileSync(filePath, 'utf-8');
     } catch (e) {
-      console.error(`Cannot read state file: ${filePath}: ${e.message}`);
+      console.error(`Cannot read file: ${filePath}: ${e.message}`);
       process.exit(1);
     }
   }
@@ -250,8 +250,8 @@ async function main() {
     console.error('  --type activity      --phase N --action xxx --message xxx [--level info|success|warning|error]');
     console.error('  --type init          --state-json \'{"projectName":...}\'  or --state-json @path/to/file.json');
     console.error('  --type dashboard-url --url http://localhost:PORT');
-    console.error('  --type question      --question "text" --header "title" [--multi-select false] --options \'[{"value":"v1","label":"L1"}]\'');
-    console.error('                       OR --questions \'[{"question":"Q1","header":"H1","options":[...]},...]\'');
+    console.error('  --type question      --question "text" --header "title" [--multi-select false] --options \'[{"value":"v1","label":"L1"}]\' or --options @path/to/file.json');
+    console.error('                       OR --questions \'[{"question":"Q1","header":"H1","options":[...]},...]\' or --questions @path/to/file.json');
     console.error('  --type question-clear');
     process.exit(1);
   }
@@ -301,7 +301,7 @@ async function main() {
       case 'init':
         path = '/api/state/init';
         try {
-          body = JSON.parse(resolveStateJson(args['state-json']));
+          body = JSON.parse(resolveJsonOrFile(args['state-json']));
         } catch {
           console.error('Invalid --state-json'); process.exit(1);
         }
@@ -314,20 +314,22 @@ async function main() {
         path = '/api/question/push';
         try {
           if (args.questions) {
-            // Multi-question format: --questions '[{question:"Q1",header:"H1",options:[...]},...]'
-            const parsed = JSON.parse(args.questions);
+            // Multi-question format: --questions '[...]' or --questions @path/to/file.json
+            const raw = resolveJsonOrFile(args.questions);
+            const parsed = JSON.parse(raw);
             body = {
               id: `q-${String(Date.now()).slice(-6)}`,
               questions: parsed
             };
           } else {
-            // Legacy single-question format
+            // Legacy single-question format: --options also supports @file
+            const rawOptions = resolveJsonOrFile(args.options || '[]');
             body = {
               id: `q-${String(Date.now()).slice(-6)}`,
               question: args.question || '',
               header: args.header || 'CC 需要你的决策',
               multiSelect: !!args['multi-select'] && args['multi-select'] !== 'false',
-              options: JSON.parse(args.options || '[]'),
+              options: JSON.parse(rawOptions),
               allowCustom: true
             };
           }
@@ -373,7 +375,7 @@ async function main() {
       break;
     case 'init':
       try {
-        fallbackInit(stateFile, JSON.parse(resolveStateJson(args['state-json'])));
+        fallbackInit(stateFile, JSON.parse(resolveJsonOrFile(args['state-json'])));
       } catch {
         console.error('Invalid --state-json'); process.exit(1);
       }
@@ -387,14 +389,15 @@ async function main() {
         if (state) {
           let questions;
           if (args.questions) {
-            questions = JSON.parse(args.questions);
+            questions = JSON.parse(resolveJsonOrFile(args.questions));
           } else {
+            const rawOptions = resolveJsonOrFile(args.options || '[]');
             questions = [{
               id: 'q-0',
               question: args.question || '',
               header: args.header || 'CC 需要你的决策',
               multiSelect: !!args['multi-select'] && args['multi-select'] !== 'false',
-              options: JSON.parse(args.options || '[]'),
+              options: JSON.parse(rawOptions),
               allowCustom: true
             }];
           }
