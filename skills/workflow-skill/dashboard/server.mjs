@@ -382,7 +382,34 @@ app.post('/api/state/activity', (req, res) => {
   const updated = mutateState(state => {
     for (const entry of entries) {
       if (!entry.action || !entry.message) continue;
-      pushActivity(state, entry.phase ?? state.currentPhase, entry.action, entry.message, entry.level || 'info');
+      const phaseId = entry.phase ?? state.currentPhase;
+      pushActivity(state, phaseId, entry.action, entry.message, entry.level || 'info');
+    }
+    // Auto-advance: ensure the current in-progress phase always has an in-progress step
+    // so the Dashboard header indicator shows what CC is doing right now
+    const currentPhase = (state.phases || []).find(p => p.id === state.currentPhase);
+    if (currentPhase && currentPhase.status === 'in-progress' && Array.isArray(currentPhase.steps)) {
+      const hasActive = currentPhase.steps.some(s => s.status === 'in-progress');
+      if (!hasActive) {
+        // First try: mark the next pending step as in-progress
+        const nextPending = currentPhase.steps.find(s => s.status === 'pending');
+        if (nextPending) {
+          nextPending.status = 'in-progress';
+          nextPending.startedAt = new Date().toISOString();
+        } else if (entries.length > 0) {
+          // No pending steps left — create a new step from the latest activity
+          const lastEntry = entries[entries.length - 1];
+          const stepId = `step-${Date.now()}`;
+          currentPhase.steps.push({
+            id: stepId,
+            name: lastEntry.message || lastEntry.action,
+            status: 'in-progress',
+            startedAt: new Date().toISOString(),
+            completedAt: null,
+            detail: '',
+          });
+        }
+      }
     }
   });
   if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });

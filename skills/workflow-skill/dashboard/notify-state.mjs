@@ -242,6 +242,31 @@ function fallbackActivity(stateFile, phase, action, message, level) {
   const effectivePhase = phase ?? state.currentPhase;
   if (effectivePhase !== undefined) ensurePhase(state, effectivePhase);
   pushActivity(state, effectivePhase, action, message, level || 'info');
+  // Auto-advance: ensure the current in-progress phase always has an in-progress step
+  // so the Dashboard header indicator shows what CC is doing right now
+  const currentPhase = (state.phases || []).find(p => p.id === state.currentPhase);
+  if (currentPhase && Array.isArray(currentPhase.steps) && currentPhase.status === 'in-progress') {
+    const hasActive = currentPhase.steps.some(s => s.status === 'in-progress');
+    if (!hasActive) {
+      // First try: mark the next pending step as in-progress
+      const nextPending = currentPhase.steps.find(s => s.status === 'pending');
+      if (nextPending) {
+        nextPending.status = 'in-progress';
+        nextPending.startedAt = new Date().toISOString();
+      } else {
+        // No pending steps left — create a new step from the activity message
+        const stepId = `step-${Date.now()}`;
+        currentPhase.steps.push({
+          id: stepId,
+          name: message || action,
+          status: 'in-progress',
+          startedAt: new Date().toISOString(),
+          completedAt: null,
+          detail: '',
+        });
+      }
+    }
+  }
   state.updatedAt = new Date().toISOString();
   writeStateFileAtomic(stateFile, state);
   console.log(`OK activity: ${action}`);
