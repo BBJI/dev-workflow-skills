@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // PreToolUse hook for AskUserQuestion — pushes question data to Dashboard server
-// When Dashboard is running: pushes question + BLOCKS AskUserQuestion + tells CC to poll
-// When Dashboard is not running: exits silently (AskUserQuestion proceeds normally)
+// Always allows AskUserQuestion to proceed (CLI is the primary channel).
+// When Dashboard is running, also pushes question there as supplementary display.
+// Injects additionalContext so CC knows it can check Dashboard for answers.
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
 import { join, resolve } from 'path';
@@ -16,17 +17,6 @@ function findDwsRoot() {
     if (parent === dir) break;
     dir = parent;
   }
-  return null;
-}
-
-// ── Find SKILL_DIR ─────────────────────────────────
-function findSkillDir() {
-  // Try from this script's location
-  const scriptDir = resolve(import.meta.dirname, '..');
-  if (existsSync(join(scriptDir, 'SKILL.md'))) return scriptDir;
-  // Try from dws root
-  const dwsRoot = findDwsRoot();
-  if (!dwsRoot) return null;
   return null;
 }
 
@@ -48,24 +38,6 @@ function findDashboardPorts() {
     }
   } catch {}
   return ports;
-}
-
-// ── Find project root and name ──────────────────────
-function findProjectInfo() {
-  const dwsRoot = findDwsRoot();
-  if (!dwsRoot) return { root: process.cwd(), name: 'default' };
-  // dwsRoot is .../.dws, project root is parent
-  const root = resolve(dwsRoot, '..');
-  // Find which project has a .dashboard.port (use first one)
-  try {
-    const entries = readdirSync(dwsRoot, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory() && existsSync(join(dwsRoot, entry.name, '.dashboard.port'))) {
-        return { root, name: entry.name };
-      }
-    }
-  } catch {}
-  return { root, name: 'default' };
 }
 
 // ── Debug logging ──────────────────────────────────
@@ -154,23 +126,6 @@ function adaptQuestion(toolInput) {
   };
 }
 
-// ── Output hook result JSON ─────────────────────────
-function outputHookResult(block, message, additionalContext) {
-  const result = {};
-  if (block) {
-    result.continue = false;
-    result.stopReason = message;
-    result.hookSpecificOutput = {
-      hookEventName: 'PreToolUse',
-      additionalContext
-    };
-  }
-  // If not blocking, output nothing (empty output = allow)
-  if (Object.keys(result).length > 0) {
-    console.log(JSON.stringify(result));
-  }
-}
-
 // ── Main ───────────────────────────────────────────
 async function main() {
   try {
@@ -203,35 +158,19 @@ async function main() {
       process.exit(0);
     }
 
-    // Check if Dashboard is actually running (has port file)
-    const ports = findDashboardPorts();
-    if (ports.length === 0) {
-      debug('No Dashboard running, allowing AskUserQuestion');
-      process.exit(0);
-    }
-
-    // Push question to Dashboard
+    // Push to Dashboard if running
     const pushed = await pushQuestion(payload);
-    if (!pushed) {
-      debug('Dashboard push failed, allowing AskUserQuestion as fallback');
-      process.exit(0);
+    if (pushed) {
+      debug('Question pushed to Dashboard, AskUserQuestion proceeds normally');
+
+      // Inject context so CC knows Dashboard answer may exist later
+      console.log(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          additionalContext: '问题已同步到 Dashboard。用户可在 Dashboard 或 CLI 中回答。如果后续需要在 CLI 之外获取 Dashboard 的回答，可用 dashboard-ask.mjs --poll-only 轮询，或在恢复工作流时检查 workflow-state.json 中的 pendingQuestion.answer。'
+        }
+      }));
     }
-
-    // Dashboard is running and question was pushed successfully.
-    // BLOCK AskUserQuestion and tell CC to use dashboard-ask.mjs instead.
-    const { root, name } = findProjectInfo();
-    const skillDir = findSkillDir();
-    const askScript = skillDir
-      ? join(skillDir, 'dashboard', 'dashboard-ask.mjs').replace(/\\/g, '/')
-      : 'dashboard-ask.mjs';
-
-    debug('Blocking AskUserQuestion, redirecting to dashboard-ask.mjs');
-
-    outputHookResult(
-      true,
-      '问题已推送到 Dashboard，请在 Dashboard 中回答。使用 dashboard-ask.mjs 轮询答案。',
-      `AskUserQuestion 已被拦截——问题已推送到 Dashboard。请改用以下 Bash 命令轮询等待用户在 Dashboard 中的回答：\n\nRESULT=$(node "${askScript}" --project-root "${root}" --project-name "${name}" --poll-only --timeout 1800)\nif echo "$RESULT" | grep -q "^ANSWER_RECEIVED:"; then\n  ANSWER=$(echo "$RESULT" | sed 's/^ANSWER_RECEIVED://')\n  # 解析 ANSWER（JSON 格式）并继续执行工作流\nelse\n  # 超时，改用 AskUserQuestion 作为备选\nfi\n\n用户正在 Dashboard 中回答问题，轮询会自动检测答案。`
-    );
   } catch (e) {
     debug(`Fatal: ${e.message}`);
   }

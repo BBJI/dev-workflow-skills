@@ -646,113 +646,44 @@ node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --pr
 
 ### Dashboard 问答模式
 
-**当 Dashboard 运行时，`AskUserQuestion` 会被 Hook 自动拦截**——问题推送到 Dashboard，CC 改用轮询方式获取答案。
+**双通道策略：CLI 为主，Dashboard 为辅。**
 
-**自动拦截机制**：`PreToolUse` Hook（`push-question.mjs`）检测到 Dashboard 运行时：
-1. 将问题推送到 Dashboard
-2. **阻止** `AskUserQuestion` 调用
-3. 注入 `additionalContext`，指示 CC 使用 `dashboard-ask.mjs --poll-only` 轮询答案
+`AskUserQuestion` 是阻塞式工具——CC 调用后必须等 CLI 输入才能继续。Dashboard 的回答无法注入回 `AskUserQuestion`。因此：
 
-CC 收到拦截指令后，执行以下命令获取用户在 Dashboard 的回答：
+- **CLI 是主通道**：`AskUserQuestion` 正常执行，用户在 CLI 回答
+- **Dashboard 是辅助展示**：Hook 自动将问题同步到 Dashboard，用户可在 Dashboard 中查看问题详情
+- **用户可同时在 Dashboard 和 CLI 操作**：先在 Dashboard 看清选项，再到 CLI 回答
+
+**Hook 自动同步**（对 `AskUserQuestion` 生效）：
+- `PreToolUse` Hook（`push-question.mjs`）：`AskUserQuestion` 触发时自动推送问题到 Dashboard
+- `PostToolUse` Hook（`clear-question.mjs`）：`AskUserQuestion` 完成后自动清理 Dashboard 问题
+
+**恢复工作流时检查遗留答案**：如果用户之前在 Dashboard 回答了问题但 CLI 未处理（如会话中断），恢复工作流时应先检查状态文件：
 ```bash
-RESULT=$(node "$SKILL_DIR/dashboard/dashboard-ask.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --poll-only --timeout 1800)
-if echo "$RESULT" | grep -q "^ANSWER_RECEIVED:"; then
-  ANSWER=$(echo "$RESULT" | sed 's/^ANSWER_RECEIVED://')
-  # 解析 ANSWER 并继续工作流
-else
-  # 超时，改用 AskUserQuestion 作为备选
+STATE_FILE=".dws/{项目名}/workflow-state.json"
+DASHBOARD_ANSWER=$(node -e "try{const s=JSON.parse(require('fs').readFileSync('$STATE_FILE','utf-8'));const pq=s.pendingQuestion;if(pq&&pq.status==='answered'){const a=pq.answer;if(a.answers){process.stdout.write(JSON.stringify(a.answers))}else{process.stdout.write(JSON.stringify({selectedValues:a.selectedValues,customText:a.customText}))}}}catch{}")
+if [ -n "$DASHBOARD_ANSWER" ]; then
+  echo "发现 Dashboard 遗留答案: $DASHBOARD_ANSWER"
+  # 清理已读取的答案
+  node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type question-clear
 fi
 ```
 
-**决策流程**：
-
-```
-CC 需要向用户提问
-    │
-    ├─ 调用 AskUserQuestion
-    │   │
-    │   ├─ Hook 检测 Dashboard 端口文件
-    │   │   │
-    │   │   ├─ Dashboard 运行中 → Hook 拦截 AskUserQuestion
-    │   │   │   → 问题自动推送到 Dashboard
-    │   │   │   → CC 执行 dashboard-ask.mjs --poll-only 轮询答案
-    │   │   │
-    │   │   └─ Dashboard 未运行 → Hook 放行 AskUserQuestion
-    │   │       → 用户在 CLI 中回答
-    │   │
-    │   └─ 无需手动判断，Hook 自动处理
-    │
-    └─ 也可主动使用 dashboard-ask.mjs（不经过 AskUserQuestion）
-```
-
-**Dashboard 问答模式操作步骤**：
-
-**方式一：使用 `dashboard-ask.mjs` 一键问答**（推荐，自动处理推送+轮询+清理）
-
+**主动使用 Dashboard 问答**（不经过 `AskUserQuestion`）：CC 也可以主动用 `dashboard-ask.mjs` 推送问题并轮询答案，适用于长等待场景：
 ```bash
-# 单个问题
-RESULT=$(node "$SKILL_DIR/dashboard/dashboard-ask.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --question "问题文本" --header "CC 需要你的决策" --multi-select false --options '[{"value":"opt1","label":"选项1","description":"描述1"},{"value":"opt2","label":"选项2","description":"描述2"}]')
-
-# 多个问题（Dashboard 以 Tab 形式展示每个问题）
-RESULT=$(node "$SKILL_DIR/dashboard/dashboard-ask.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --questions '[{"question":"问题1","header":"标题1","multiSelect":false,"options":[{"value":"a","label":"选项A"}]},{"question":"问题2","header":"标题2","multiSelect":false,"options":[{"value":"b","label":"选项B"}]}]')
-
-# 处理结果
+RESULT=$(node "$SKILL_DIR/dashboard/dashboard-ask.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --question "问题" --header "标题" --options '[...]' --timeout 86400)
 if [ "$RESULT" = "DASHBOARD_NOT_RUNNING" ]; then
   # Dashboard 未运行，回退到 AskUserQuestion
-  ...
 elif echo "$RESULT" | grep -q "^ANSWER_TIMEOUT"; then
-  # 超时，回退到 AskUserQuestion
-  ...
+  # 超时
 else
-  # 答案在 ANSWER_RECEIVED: 后面
   ANSWER=$(echo "$RESULT" | sed 's/^ANSWER_RECEIVED://')
-  # 根据 ANSWER 继续执行
 fi
-```
-
-**方式二：手动分步操作**
-
-```bash
-# Step 1: 推送问题到 Dashboard
-# 单个问题
-node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type question --question "问题文本" --header "CC 需要你的决策" --multi-select false --options '[{"value":"opt1","label":"选项1","description":"描述1"},{"value":"opt2","label":"选项2","description":"描述2"}]'
-
-# 多个问题（Dashboard 以 Tab 形式展示每个问题）
-node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type question --questions '[{"question":"问题1","header":"标题1","multiSelect":false,"options":[{"value":"a","label":"选项A"}]},{"question":"问题2","header":"标题2","multiSelect":false,"options":[{"value":"b","label":"选项B"}]}]'
-
-# Step 2: 轮询等待答案（用户在 Dashboard 提交后自动继续）
-STATE_FILE=".dws/{项目名}/workflow-state.json"
-TIMEOUT=1800
-ELAPSED=0
-while [ $ELAPSED -lt $TIMEOUT ]; do
-  STATUS=$(node -e "try{const s=JSON.parse(require('fs').readFileSync('$STATE_FILE','utf-8'));console.log(s.pendingQuestion?.status||'none')}catch{console.log('none')}")
-  if [ "$STATUS" = "answered" ]; then
-    ANSWER=$(node -e "const s=JSON.parse(require('fs').readFileSync('$STATE_FILE','utf-8'));const a=s.pendingQuestion.answer;if(a.answers){console.log(JSON.stringify(a.answers))}else{console.log(JSON.stringify({selectedValues:a.selectedValues,customText:a.customText}))}")
-    echo "ANSWER_RECEIVED: $ANSWER"
-    break
-  fi
-  sleep 3
-  ELAPSED=$((ELAPSED + 3))
-done
-if [ $ELAPSED -ge $TIMEOUT ]; then
-  echo "ANSWER_TIMEOUT"
-fi
-
-# Step 3: 读取答案后清理问题
-node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type question-clear
 ```
 
 **答案格式**：
-- 多问题答案: `[{"questionId":"q-0","selectedValues":["opt1"],"customText":""},{"questionId":"q-1","selectedValues":["opt2"],"customText":""}]`
+- 多问题答案: `[{"questionId":"q-0","selectedValues":["opt1"],"customText":""}]`
 - 单问题答案: `{"selectedValues":["opt1"],"customText":""}`
-
-CC 读取答案后根据 `selectedValues` 中的选项值继续执行。
-
-**Dashboard 未运行时回退到 `AskUserQuestion`**：Hook 会自动将 `AskUserQuestion` 的问题同步到 Dashboard（如果 Dashboard 后续启动的话）。
-
-**Hook 自动同步**（仅对 `AskUserQuestion` 生效）：
-- `PreToolUse` Hook（`push-question.mjs`）：`AskUserQuestion` 触发时自动推送问题到 Dashboard
-- `PostToolUse` Hook（`clear-question.mjs`）：`AskUserQuestion` 完成后自动清理 Dashboard 问题
 
 **读取答案后清理**：CC 读取答案后，调用 `--type question-clear` 将 `pendingQuestion` 设为 `null`，使 Dashboard 中的问题面板消失。
 

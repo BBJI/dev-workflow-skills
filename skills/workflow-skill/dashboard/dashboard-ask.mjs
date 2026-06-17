@@ -93,7 +93,7 @@ async function main() {
 
   // Step 2: Poll for answer
   const stateFile = join(projectRoot, '.dws', projectName, 'workflow-state.json');
-  const timeout = parseInt(args.timeout) || 1800;
+  const timeout = parseInt(args.timeout) || 86400;
   const interval = 3;
   let elapsed = 0;
 

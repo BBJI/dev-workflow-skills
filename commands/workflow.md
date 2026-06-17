@@ -51,18 +51,7 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, LSP, Agent,
 默认全自主模式，仅最终交付检查点暂停。如用户指定半自主模式，则每个阶段完成后暂停等待用户确认。
 
 ### 4. 问答策略
-**Dashboard 运行时必须使用 Dashboard 问答模式，不使用 `AskUserQuestion`**（因为 `AskUserQuestion` 阻塞等 CLI 输入，Dashboard 回答无法回传）。使用 `dashboard-ask.mjs` 一键完成推送+轮询+清理：
-
-```bash
-RESULT=$(node "$SKILL_DIR/dashboard/dashboard-ask.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --question "问题" --header "标题" --options '[...]')
-if [ "$RESULT" = "DASHBOARD_NOT_RUNNING" ]; then
-  # 回退到 AskUserQuestion
-else
-  ANSWER=$(echo "$RESULT" | sed 's/^ANSWER_RECEIVED://')
-fi
-```
-
-详见 SKILL.md 中的「Dashboard 问答模式」章节。
+**双通道：CLI 为主，Dashboard 为辅。** `AskUserQuestion` 正常执行（CLI 主通道），Hook 自动同步问题到 Dashboard（辅助展示）。恢复工作流时先检查 `workflow-state.json` 中是否有 Dashboard 遗留答案。详见 SKILL.md 中的「Dashboard 问答模式」章节。
 
 ---
 
