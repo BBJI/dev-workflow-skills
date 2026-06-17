@@ -100,92 +100,37 @@ function writeStateFile(state) {
   renameSync(tmp, STATE_FILE);
 }
 
-// ── Default phase structure ──────────────────────────
-const DEFAULT_PHASES = [
-  { id: 0, name: '项目规范生成', skill: 'instruction-skill', steps: [
-    { id: 'instruct-step-1', name: '确定项目类型和目标工具', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'instruct-step-2', name: '收集项目信息', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'instruct-step-3', name: '编写源文档', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'instruct-step-4', name: '派生格式输出', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'instruct-step-5', name: '验证输出', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 1, name: '需求分析', skill: 'req-analysis-skill', steps: [
-    { id: 'req-step-1', name: '接收解析需求', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'req-step-2', name: '澄清需求', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'req-step-3', name: '分解需求', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'req-step-4', name: '结构化需求', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'req-step-5', name: '验证需求', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'req-step-6', name: '输出需求文档', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 2, name: 'UI/UX设计', skill: 'design-skill', steps: [
-    { id: 'design-step-1', name: '理解需求', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-2', name: '信息架构', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-3', name: '用户流程', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-4', name: '设计令牌', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-5', name: '组件设计', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-6', name: '页面设计', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-7', name: '交互设计', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-8', name: '无障碍设计', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 3, name: '实现评估', skill: 'review-skill', steps: [
-    { id: 'review-step-1', name: '需求覆盖检查', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'review-step-2', name: '一致性检查', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'review-step-3', name: '可行性评估', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'review-step-4', name: '缺口分析', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'review-step-5', name: '风险评估', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'review-step-6', name: '技术文档', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'review-step-7', name: '评审报告', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 4, name: '任务拆分', skill: 'task-allocation-skill', steps: [
-    { id: 'task-step-1', name: '识别任务单元', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'task-step-2', name: '映射关系', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'task-step-3', name: '依赖图', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'task-step-4', name: '估算工时', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'task-step-5', name: '优先级排序', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'task-step-6', name: '迭代计划', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'task-step-7', name: '跟踪配置', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 5, name: '测试用例', skill: 'test-skill', steps: [
-    { id: 'test-write-step-1', name: '梳理测试范围', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-write-step-2', name: '功能测试用例', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-write-step-3', name: '非功能测试用例', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-write-step-4', name: '无障碍测试用例', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-write-step-5', name: '视觉测试用例', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-write-step-6', name: '汇总测试计划', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 6, name: 'TDD开发', skill: 'dev-skill', steps: [
-    { id: 'dev-step-1', name: '理解任务', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'dev-step-2', name: '探索代码', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'dev-step-3', name: 'TDD实现', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'dev-step-4', name: '补充测试', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'dev-step-5', name: '自检代码', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'dev-step-6', name: 'Bug修复', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 7, name: '测试验证', skill: 'test-skill', steps: [
-    { id: 'test-verify-step-1', name: '验证计划', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-verify-step-2', name: '功能验证', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-verify-step-3', name: '非功能验证', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-verify-step-4', name: '视觉验证', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-verify-step-5', name: '回归验证', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-verify-step-6', name: 'Bug报告', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-verify-step-7', name: '测试总结', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-];
+// ── Dynamic phase/step creation ──────────────────────
+// Phases and steps are created on-the-fly from CC execution,
+// not from a hardcoded template. Names come from CC via
+// --phase-name / --step-name params, or are derived from IDs.
 
-function ensurePhases(state) {
+function ensurePhase(state, phaseId, name) {
   if (!Array.isArray(state.phases)) state.phases = [];
-  if (state.phases.length === 0) {
-    state.phases = JSON.parse(JSON.stringify(DEFAULT_PHASES));
-    return;
-  }
-  // Fill in any missing phases
-  for (const def of DEFAULT_PHASES) {
-    if (!state.phases.find(p => p.id === def.id)) {
-      state.phases.push(JSON.parse(JSON.stringify(def)));
-    }
-  }
-  // Sort by id
+  if (state.phases.find(p => p.id === phaseId)) return;
+  state.phases.push({
+    id: phaseId,
+    name: name || `阶段 ${phaseId}`,
+    status: 'pending',
+    startedAt: null,
+    completedAt: null,
+    steps: [],
+    artifacts: [],
+  });
   state.phases.sort((a, b) => a.id - b.id);
+}
+
+function ensureStep(phase, stepId, name) {
+  if (!Array.isArray(phase.steps)) phase.steps = [];
+  if (phase.steps.find(s => s.id === stepId)) return;
+  phase.steps.push({
+    id: stepId,
+    name: name || stepId,
+    status: 'pending',
+    startedAt: null,
+    completedAt: null,
+    detail: '',
+  });
 }
 
 // ── Activity log helper ─────────────────────────────
@@ -212,7 +157,6 @@ function mutateState(fn) {
     console.warn('State file missing, recovering from in-memory state');
   }
   if (!state) return null;
-  ensurePhases(state);
   fn(state);
   state.updatedAt = new Date().toISOString();
   writeStateFile(state);
@@ -330,13 +274,15 @@ app.post('/api/state/init', (req, res) => {
 
 // Update step status
 app.post('/api/state/step', (req, res) => {
-  const { phaseId, stepId, status, detail, result } = req.body;
+  const { phaseId, stepId, status, detail, result, phaseName, stepName } = req.body;
   if (stepId === undefined || !status) {
     return res.status(400).json({ success: false, error: 'Missing stepId or status' });
   }
   const updated = mutateState(state => {
+    ensurePhase(state, phaseId, phaseName);
     const phase = (state.phases || []).find(p => p.id === phaseId);
     if (!phase) return;
+    ensureStep(phase, stepId, stepName);
     const step = (phase.steps || []).find(s => s.id === stepId);
     if (!step) return;
 
@@ -365,11 +311,12 @@ app.post('/api/state/step', (req, res) => {
 
 // Update phase status
 app.post('/api/state/phase', (req, res) => {
-  const { phaseId, status, artifacts } = req.body;
+  const { phaseId, status, artifacts, phaseName } = req.body;
   if (phaseId === undefined || !status) {
     return res.status(400).json({ success: false, error: 'Missing phaseId or status' });
   }
   const updated = mutateState(state => {
+    ensurePhase(state, phaseId, phaseName);
     const phase = (state.phases || []).find(p => p.id === phaseId);
     if (!phase) return;
 

@@ -384,7 +384,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
      ```bash
      node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" --type init --state-json @"$PROJECT_ROOT/.dws/$PROJECT_NAME/.tmp/init-state.json" && rm -f "$PROJECT_ROOT/.dws/$PROJECT_NAME/.tmp/init-state.json"
      ```
-   `--state-json` 支持两种方式：1) 直接传 JSON 字符串（短 JSON），2) `@文件路径` 从文件读取（推荐，避免 Windows 命令行长度限制和引号转义问题）。**注意**：临时文件必须放在 `$PROJECT_ROOT/.dws/` 下，不要用 `/tmp/`，因为 Windows 上 `/tmp/` 路径在 Write 工具和 Node.js 之间可能不一致。初始状态 JSON 结构见下方"状态文件结构"。所有阶段 status 设为 "pending"（新项目阶段零设为 "skipped"，已有项目阶段零设为 "pending"），consensusTracker 和 bugTracker 设为 null，activityLog 为空数组。
+   `--state-json` 支持两种方式：1) 直接传 JSON 字符串（短 JSON），2) `@文件路径` 从文件读取（推荐，避免 Windows 命令行长度限制和引号转义问题）。**注意**：临时文件必须放在 `$PROJECT_ROOT/.dws/` 下，不要用 `/tmp/`，因为 Windows 上 `/tmp/` 路径在 Write 工具和 Node.js 之间可能不一致。初始状态 JSON 结构见下方"状态文件结构"。**phases 初始化为空数组**，阶段和步骤在 CC 执行过程中通过 `--type phase --phase-name` 和 `--type step --step-name` 动态创建。consensusTracker 和 bugTracker 设为 null，activityLog 为空数组。
 
 2. **启动仪表盘服务器**：在后台启动 Node.js 服务器：
    ```bash
@@ -433,20 +433,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
   "startedAt": "ISO时间戳",
   "updatedAt": "ISO时间戳",
   "completedAt": null,
-  "phases": [
-    {
-      "id": 0,
-      "name": "项目规范生成",
-      "skill": "instruction-skill",
-      "status": "pending",
-      "startedAt": null,
-      "completedAt": null,
-      "steps": [
-        { "id": "instruct-step-1", "name": "确定项目类型和目标工具", "status": "pending", "startedAt": null, "completedAt": null, "detail": "" }
-      ],
-      "artifacts": []
-    }
-  ],
+  "phases": [],
   "consensusTracker": null,
   "bugTracker": null,
   "activityLog": []
@@ -474,16 +461,18 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 **重要**：每个步骤完成时，**必须**填写 `result` 字段，确保用户在 Dashboard 中点击步骤能看到有意义的执行详情。
 
-| 阶段 | 步骤 |
-|------|------|
-| 0-项目规范 | instruct-step-1~5: 确定项目类型/收集信息/编写源文档/派生格式/验证输出 |
-| 1-需求分析 | req-step-1~6: 接收解析/澄清/分解/结构化/验证/输出 |
-| 2-UI/UX设计 | design-step-1~8: 理解需求/信息架构/用户流程/设计令牌/组件/页面/交互/无障碍 |
-| 3-实现评估 | review-step-1~7: 需求覆盖/一致性/可行性/缺口分析/风险/技术文档/评审报告 |
-| 4-任务拆分 | task-step-1~7: 识别单元/映射/依赖图/估算/优先级/迭代计划/跟踪 |
-| 5-测试用例 | test-write-step-1~6: 梳理范围/功能/非功能/无障碍/视觉/汇总 |
-| 6-TDD开发 | dev-step-1~6: 理解任务/探索/TDD实现/补充测试/自检/Bug修复 |
-| 7-测试验证 | test-verify-step-1~7: 计划/功能/非功能/视觉/回归/Bug报告/总结 |
+| 阶段 | 推荐 step-id | 步骤 |
+|------|-------------|------|
+| 0-项目规范 | instruct-step-1~5 | 确定项目类型/收集信息/编写源文档/派生格式/验证输出 |
+| 1-需求分析 | req-step-1~6 | 接收解析/澄清/分解/结构化/验证/输出 |
+| 2-UI/UX设计 | design-step-1~8 | 理解需求/信息架构/用户流程/设计令牌/组件/页面/交互/无障碍 |
+| 3-实现评估 | review-step-1~7 | 需求覆盖/一致性/可行性/缺口分析/风险/技术文档/评审报告 |
+| 4-任务拆分 | task-step-1~7 | 识别单元/映射/依赖图/估算/优先级/迭代计划/跟踪 |
+| 5-测试用例 | test-write-step-1~6 | 梳理范围/功能/非功能/无障碍/视觉/汇总 |
+| 6-TDD开发 | dev-step-1~6 | 理解任务/探索/TDD实现/补充测试/自检/Bug修复 |
+| 7-测试验证 | test-verify-step-1~7 | 计划/功能/非功能/视觉/回归/Bug报告/总结 |
+
+**注意**：上表为推荐 step-id 命名规范。阶段和步骤在 Dashboard 中按需创建——CC 通过 `--phase-name` 和 `--step-name` 传入名称，Dashboard 动态生成。如果 CC 使用了不同的 step-id，Dashboard 同样支持。
 
 ### 状态更新机制
 
@@ -506,9 +495,9 @@ SKILL_DIR=$(find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -not 
 node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
   --type overall --current-phase N --overall-status in-progress
 
-# 2. 更新阶段状态：标记阶段进行中（自动标记第一步为 in-progress）
+# 2. 更新阶段状态：标记阶段进行中（自动创建阶段，自动标记第一步为 in-progress）
 node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-  --type phase --phase-id N --status in-progress
+  --type phase --phase-id N --phase-name "{阶段名}" --status in-progress
 
 # 3. 追加活动日志
 node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
@@ -519,7 +508,7 @@ node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --pr
 ```bash
 # 1. 更新阶段状态：标记阶段完成（自动将未完成步骤标为 completed）+ 制品
 node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-  --type phase --phase-id N --status completed --artifacts '[{"name":"文件名","path":"相对路径","type":"markdown","generatedAt":"ISO时间戳"}]'
+  --type phase --phase-id N --phase-name "{阶段名}" --status completed --artifacts '[{"name":"文件名","path":"相对路径","type":"markdown","generatedAt":"ISO时间戳"}]'
 
 # 2. 追加活动日志
 node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
@@ -530,11 +519,11 @@ node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --pr
 ```bash
 # 步骤开始
 node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-  --type step --phase-id N --step-id {步骤ID} --status in-progress --detail "简要描述当前正在做什么"
+  --type step --phase-id N --step-id {步骤ID} --step-name "{步骤名}" --status in-progress --detail "简要描述当前正在做什么"
 
 # 步骤完成
 node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-  --type step --phase-id N --step-id {步骤ID} --status completed --result "步骤执行结果摘要"
+  --type step --phase-id N --step-id {步骤ID} --step-name "{步骤名}" --status completed --result "步骤执行结果摘要"
 ```
 
 ### 共识闭环更新（阶段三）

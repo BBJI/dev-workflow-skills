@@ -113,100 +113,44 @@ function pushActivity(state, phase, action, message, level) {
   }
 }
 
-// ── Default phase structure ──────────────────────────
-const DEFAULT_PHASES = [
-  { id: 0, name: '项目规范生成', skill: 'instruction-skill', steps: [
-    { id: 'instruct-step-1', name: '确定项目类型和目标工具', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'instruct-step-2', name: '收集项目信息', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'instruct-step-3', name: '编写源文档', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'instruct-step-4', name: '派生格式输出', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'instruct-step-5', name: '验证输出', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 1, name: '需求分析', skill: 'req-analysis-skill', steps: [
-    { id: 'req-step-1', name: '接收解析需求', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'req-step-2', name: '澄清需求', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'req-step-3', name: '分解需求', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'req-step-4', name: '结构化需求', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'req-step-5', name: '验证需求', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'req-step-6', name: '输出需求文档', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 2, name: 'UI/UX设计', skill: 'design-skill', steps: [
-    { id: 'design-step-1', name: '理解需求', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-2', name: '信息架构', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-3', name: '用户流程', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-4', name: '设计令牌', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-5', name: '组件设计', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-6', name: '页面设计', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-7', name: '交互设计', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'design-step-8', name: '无障碍设计', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 3, name: '实现评估', skill: 'review-skill', steps: [
-    { id: 'review-step-1', name: '需求覆盖检查', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'review-step-2', name: '一致性检查', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'review-step-3', name: '可行性评估', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'review-step-4', name: '缺口分析', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'review-step-5', name: '风险评估', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'review-step-6', name: '技术文档', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'review-step-7', name: '评审报告', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 4, name: '任务拆分', skill: 'task-allocation-skill', steps: [
-    { id: 'task-step-1', name: '识别任务单元', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'task-step-2', name: '映射关系', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'task-step-3', name: '依赖图', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'task-step-4', name: '估算工时', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'task-step-5', name: '优先级排序', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'task-step-6', name: '迭代计划', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'task-step-7', name: '跟踪配置', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 5, name: '测试用例', skill: 'test-skill', steps: [
-    { id: 'test-write-step-1', name: '梳理测试范围', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-write-step-2', name: '功能测试用例', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-write-step-3', name: '非功能测试用例', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-write-step-4', name: '无障碍测试用例', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-write-step-5', name: '视觉测试用例', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-write-step-6', name: '汇总测试计划', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 6, name: 'TDD开发', skill: 'dev-skill', steps: [
-    { id: 'dev-step-1', name: '理解任务', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'dev-step-2', name: '探索代码', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'dev-step-3', name: 'TDD实现', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'dev-step-4', name: '补充测试', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'dev-step-5', name: '自检代码', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'dev-step-6', name: 'Bug修复', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-  { id: 7, name: '测试验证', skill: 'test-skill', steps: [
-    { id: 'test-verify-step-1', name: '验证计划', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-verify-step-2', name: '功能验证', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-verify-step-3', name: '非功能验证', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-verify-step-4', name: '视觉验证', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-verify-step-5', name: '回归验证', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-verify-step-6', name: 'Bug报告', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-    { id: 'test-verify-step-7', name: '测试总结', status: 'pending', startedAt: null, completedAt: null, detail: '' },
-  ]},
-];
-
-function ensurePhases(state) {
+// ── Dynamic phase/step creation ──────────────────────
+function ensurePhase(state, phaseId, name) {
   if (!Array.isArray(state.phases)) state.phases = [];
-  if (state.phases.length === 0) {
-    state.phases = JSON.parse(JSON.stringify(DEFAULT_PHASES));
-    return;
-  }
-  for (const def of DEFAULT_PHASES) {
-    if (!state.phases.find(p => p.id === def.id)) {
-      state.phases.push(JSON.parse(JSON.stringify(def)));
-    }
-  }
+  if (state.phases.find(p => p.id === phaseId)) return;
+  state.phases.push({
+    id: phaseId,
+    name: name || `阶段 ${phaseId}`,
+    status: 'pending',
+    startedAt: null,
+    completedAt: null,
+    steps: [],
+    artifacts: [],
+  });
   state.phases.sort((a, b) => a.id - b.id);
 }
 
+function ensureStep(phase, stepId, name) {
+  if (!Array.isArray(phase.steps)) phase.steps = [];
+  if (phase.steps.find(s => s.id === stepId)) return;
+  phase.steps.push({
+    id: stepId,
+    name: name || stepId,
+    status: 'pending',
+    startedAt: null,
+    completedAt: null,
+    detail: '',
+  });
+}
+
 // ── Direct file mutation fallbacks ─────────────────
-function fallbackStep(stateFile, phaseId, stepId, status, detail, result) {
+function fallbackStep(stateFile, phaseId, stepId, status, detail, result, phaseName, stepName) {
   const state = readStateFile(stateFile);
   if (!state) { console.error('State file not found:', stateFile); process.exit(1); }
 
-  ensurePhases(state);
+  ensurePhase(state, phaseId, phaseName);
   const phase = (state.phases || []).find(p => p.id === phaseId);
   if (!phase) { console.error('Phase not found:', phaseId); process.exit(1); }
+  ensureStep(phase, stepId, stepName);
   const step = (phase.steps || []).find(s => s.id === stepId);
   if (!step) { console.error('Step not found:', stepId); process.exit(1); }
 
@@ -228,11 +172,11 @@ function fallbackStep(stateFile, phaseId, stepId, status, detail, result) {
   console.log(`OK step ${stepId} -> ${status}`);
 }
 
-function fallbackPhase(stateFile, phaseId, status, artifacts) {
+function fallbackPhase(stateFile, phaseId, status, artifacts, phaseName) {
   const state = readStateFile(stateFile);
   if (!state) { console.error('State file not found:', stateFile); process.exit(1); }
 
-  ensurePhases(state);
+  ensurePhase(state, phaseId, phaseName);
   const phase = (state.phases || []).find(p => p.id === phaseId);
   if (!phase) { console.error('Phase not found:', phaseId); process.exit(1); }
 
@@ -270,8 +214,7 @@ function fallbackOverall(stateFile, currentPhase, overallStatus, currentIteratio
   const state = readStateFile(stateFile);
   if (!state) { console.error('State file not found:', stateFile); process.exit(1); }
 
-  ensurePhases(state);
-  if (currentPhase !== undefined) state.currentPhase = currentPhase;
+  if (currentPhase !== undefined) { ensurePhase(state, currentPhase); state.currentPhase = currentPhase; }
   if (overallStatus !== undefined) state.overallStatus = overallStatus;
   if (currentIteration !== undefined) state.currentIteration = currentIteration;
   if (totalIterations !== undefined) state.totalIterations = totalIterations;
@@ -286,8 +229,9 @@ function fallbackActivity(stateFile, phase, action, message, level) {
   const state = readStateFile(stateFile);
   if (!state) { console.error('State file not found:', stateFile); process.exit(1); }
 
-  ensurePhases(state);
-  pushActivity(state, phase ?? state.currentPhase, action, message, level || 'info');
+  const effectivePhase = phase ?? state.currentPhase;
+  if (effectivePhase !== undefined) ensurePhase(state, effectivePhase);
+  pushActivity(state, effectivePhase, action, message, level || 'info');
   state.updatedAt = new Date().toISOString();
   writeStateFileAtomic(stateFile, state);
   console.log(`OK activity: ${action}`);
@@ -337,8 +281,8 @@ async function main() {
 
   if (!type) {
     console.error('Usage: notify-state.mjs --type step|phase|overall|activity|init|dashboard-url|question|question-clear [options]');
-    console.error('  --type step          --phase-id N --step-id xxx --status in-progress|completed [--detail ...] [--result ...]');
-    console.error('  --type phase         --phase-id N --status in-progress|completed [--artifacts ...]');
+    console.error('  --type step          --phase-id N --step-id xxx --status in-progress|completed [--phase-name ...] [--step-name ...] [--detail ...] [--result ...]');
+    console.error('  --type phase         --phase-id N --status in-progress|completed [--phase-name ...] [--artifacts ...]');
     console.error('  --type overall       [--current-phase N] [--overall-status ...] [--current-iteration N] [--total-iterations N]');
     console.error('  --type activity      --phase N --action xxx --message xxx [--level info|success|warning|error]');
     console.error('  --type init          --state-json \'{"projectName":...}\'  or --state-json @path/to/file.json');
@@ -361,6 +305,8 @@ async function main() {
           stepId: args['step-id'],
           status: args.status,
         };
+        if (args['phase-name'] !== undefined) body.phaseName = args['phase-name'];
+        if (args['step-name'] !== undefined) body.stepName = args['step-name'];
         if (args.detail !== undefined) body.detail = args.detail;
         if (args.result !== undefined) body.result = args.result;
         break;
@@ -370,6 +316,7 @@ async function main() {
           phaseId: parseInt(args['phase-id']),
           status: args.status,
         };
+        if (args['phase-name'] !== undefined) body.phaseName = args['phase-name'];
         if (args.artifacts) {
           try { body.artifacts = JSON.parse(args.artifacts); } catch { body.artifacts = []; }
         }
@@ -450,10 +397,10 @@ async function main() {
   // Fallback: direct file write
   switch (type) {
     case 'step':
-      fallbackStep(stateFile, parseInt(args['phase-id']), args['step-id'], args.status, args.detail, args.result);
+      fallbackStep(stateFile, parseInt(args['phase-id']), args['step-id'], args.status, args.detail, args.result, args['phase-name'], args['step-name']);
       break;
     case 'phase':
-      fallbackPhase(stateFile, parseInt(args['phase-id']), args.status, args.artifacts ? JSON.parse(args.artifacts) : undefined);
+      fallbackPhase(stateFile, parseInt(args['phase-id']), args.status, args.artifacts ? JSON.parse(args.artifacts) : undefined, args['phase-name']);
       break;
     case 'overall':
       fallbackOverall(stateFile,
