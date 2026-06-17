@@ -575,10 +575,13 @@ node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --pr
 node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
   --type activity --phase {currentPhase} --action workflow-completed --message "工作流完成" --level success
 
-# 3. 主动关闭仪表盘
+# 3. 导出静态 Dashboard（关闭前留档）
+node "$SKILL_DIR/dashboard/export-dashboard.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME"
+
+# 4. 主动关闭仪表盘
 kill $(cat .dws/{项目名}/.dashboard.pid) 2>/dev/null || taskkill /PID $(cat .dws/{项目名}/.dashboard.pid) 2>/dev/null || true
 
-# 4. 记录 Dashboard 关闭日志
+# 5. 记录 Dashboard 关闭日志
 node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
   --type activity --phase {currentPhase} --action dashboard-stopped --message "Dashboard 已关闭" --level info
 ```

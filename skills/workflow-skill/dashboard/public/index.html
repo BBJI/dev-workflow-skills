@@ -392,6 +392,8 @@ const STEP_ICONS = {
   skipped: '—',
 };
 
+const IS_STATIC = !!window.__STATIC_STATE__;
+
 let prevState = null;
 let selectedPhase = null;
 let reconnectDelay = 1000;
@@ -1403,6 +1405,7 @@ function toggleQuestionOption(questionId, value, multiSelect) {
 }
 
 function submitQuestionAnswer(questionId) {
+  if (IS_STATIC) return;
   const btn = document.getElementById('questionSubmitBtn');
   if (!btn) return;
 
@@ -1581,20 +1584,35 @@ function convergenceLabel(c) {
 }
 
 // ── Init ────────────────────────────────────────────
-connectSSE();
+if (IS_STATIC) {
+  // Static archive mode: render from embedded state, no server needed
+  const staticState = window.__STATIC_STATE__;
+  renderState(staticState);
+  prevState = staticState;
+  // Show static badge, hide connection indicator
+  const connDot = document.getElementById('connDot');
+  if (connDot) connDot.style.display = 'none';
+  const phaseLabel = document.getElementById('phaseLabel');
+  if (phaseLabel) phaseLabel.textContent = phaseLabel.textContent + ' · 静态存档';
+  const refreshSpan = document.getElementById('lastRefresh');
+  if (refreshSpan) refreshSpan.textContent = '存档';
+  console.log('[DWS] Static archive loaded');
+} else {
+  connectSSE();
 
-// Also fetch initial state via API
-fetch('/api/state')
-  .then(r => r.json())
-  .then(state => {
-    if (!prevState) {
-      renderState(state);
-      prevState = state;
-      updateLastRefresh();
-      console.log('[DWS] Initial state loaded via API');
-    }
-  })
-  .catch((err) => { console.warn('[DWS] API fetch failed:', err) });
+  // Also fetch initial state via API
+  fetch('/api/state')
+    .then(r => r.json())
+    .then(state => {
+      if (!prevState) {
+        renderState(state);
+        prevState = state;
+        updateLastRefresh();
+        console.log('[DWS] Initial state loaded via API');
+      }
+    })
+    .catch((err) => { console.warn('[DWS] API fetch failed:', err) });
+}
 </script>
 </body>
 </html>
