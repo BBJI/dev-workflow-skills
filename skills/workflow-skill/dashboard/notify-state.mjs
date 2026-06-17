@@ -114,6 +114,12 @@ function pushActivity(state, phase, action, message, level) {
 }
 
 // ── Dynamic phase/step creation ──────────────────────
+function parseId(val) {
+  if (val === undefined || val === null) return val;
+  const n = Number(val);
+  return Number.isNaN(n) ? val : n;
+}
+
 function ensurePhase(state, phaseId, name) {
   if (!Array.isArray(state.phases)) state.phases = [];
   if (state.phases.find(p => p.id === phaseId)) return;
@@ -126,7 +132,11 @@ function ensurePhase(state, phaseId, name) {
     steps: [],
     artifacts: [],
   });
-  state.phases.sort((a, b) => a.id - b.id);
+  state.phases.sort((a, b) => {
+    const na = typeof a.id === 'number' ? a.id : Infinity;
+    const nb = typeof b.id === 'number' ? b.id : Infinity;
+    return na - nb;
+  });
 }
 
 function ensureStep(phase, stepId, name) {
@@ -301,7 +311,7 @@ async function main() {
       case 'step':
         path = '/api/state/step';
         body = {
-          phaseId: parseInt(args['phase-id']),
+          phaseId: parseId(args['phase-id']),
           stepId: args['step-id'],
           status: args.status,
         };
@@ -313,7 +323,7 @@ async function main() {
       case 'phase':
         path = '/api/state/phase';
         body = {
-          phaseId: parseInt(args['phase-id']),
+          phaseId: parseId(args['phase-id']),
           status: args.status,
         };
         if (args['phase-name'] !== undefined) body.phaseName = args['phase-name'];
@@ -324,7 +334,7 @@ async function main() {
       case 'overall':
         path = '/api/state/overall';
         body = {};
-        if (args['current-phase'] !== undefined) body.currentPhase = parseInt(args['current-phase']);
+        if (args['current-phase'] !== undefined) body.currentPhase = parseId(args['current-phase']);
         if (args['overall-status'] !== undefined) body.overallStatus = args['overall-status'];
         if (args['current-iteration'] !== undefined) body.currentIteration = parseInt(args['current-iteration']);
         if (args['total-iterations'] !== undefined) body.totalIterations = parseInt(args['total-iterations']);
@@ -332,7 +342,7 @@ async function main() {
       case 'activity':
         path = '/api/state/activity';
         body = {
-          phase: parseInt(args.phase),
+          phase: parseId(args.phase),
           action: args.action,
           message: args.message,
           level: args.level || 'info',
@@ -397,21 +407,21 @@ async function main() {
   // Fallback: direct file write
   switch (type) {
     case 'step':
-      fallbackStep(stateFile, parseInt(args['phase-id']), args['step-id'], args.status, args.detail, args.result, args['phase-name'], args['step-name']);
+      fallbackStep(stateFile, parseId(args['phase-id']), args['step-id'], args.status, args.detail, args.result, args['phase-name'], args['step-name']);
       break;
     case 'phase':
-      fallbackPhase(stateFile, parseInt(args['phase-id']), args.status, args.artifacts ? JSON.parse(args.artifacts) : undefined, args['phase-name']);
+      fallbackPhase(stateFile, parseId(args['phase-id']), args.status, args.artifacts ? JSON.parse(args.artifacts) : undefined, args['phase-name']);
       break;
     case 'overall':
       fallbackOverall(stateFile,
-        args['current-phase'] !== undefined ? parseInt(args['current-phase']) : undefined,
+        args['current-phase'] !== undefined ? parseId(args['current-phase']) : undefined,
         args['overall-status'],
         args['current-iteration'] !== undefined ? parseInt(args['current-iteration']) : undefined,
         args['total-iterations'] !== undefined ? parseInt(args['total-iterations']) : undefined
       );
       break;
     case 'activity':
-      fallbackActivity(stateFile, parseInt(args.phase), args.action, args.message, args.level);
+      fallbackActivity(stateFile, parseId(args.phase), args.action, args.message, args.level);
       break;
     case 'init':
       try {

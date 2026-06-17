@@ -117,7 +117,12 @@ function ensurePhase(state, phaseId, name) {
     steps: [],
     artifacts: [],
   });
-  state.phases.sort((a, b) => a.id - b.id);
+  // Sort by id (numeric or string); non-numeric IDs go last
+  state.phases.sort((a, b) => {
+    const na = typeof a.id === 'number' ? a.id : Infinity;
+    const nb = typeof b.id === 'number' ? b.id : Infinity;
+    return na - nb;
+  });
 }
 
 function ensureStep(phase, stepId, name) {
