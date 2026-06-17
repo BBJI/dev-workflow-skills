@@ -456,45 +456,86 @@ function setConnected(connected) {
   dot.className = 'conn-dot ' + (connected ? 'connected' : 'disconnected');
 }
 
+// ── Normalize state schema ──────────────────────────
+// Handle state files from different skill versions or incomplete init
+function normalizeState(state) {
+  // Fallback overallStatus ← status
+  if (!state.overallStatus && state.status) {
+    state.overallStatus = state.status;
+  }
+  // Fallback currentPhase as number
+  if (typeof state.currentPhase === 'string') {
+    const phaseMap = { 'init': 0, 'req': 1, 'design': 2, 'review': 3, 'task': 4, 'test': 5, 'dev': 6, 'verify': 7 };
+    state.currentPhase = phaseMap[state.currentPhase] ?? -1;
+  }
+  // Ensure phases array exists
+  if (!Array.isArray(state.phases)) {
+    state.phases = [];
+  }
+  // Ensure activityLog array exists
+  if (!Array.isArray(state.activityLog)) {
+    state.activityLog = [];
+  }
+  return state;
+}
+
 // ── Render ──────────────────────────────────────────
 function renderState(state) {
-  const emptyEl = document.getElementById('emptyState');
-  if (emptyEl) emptyEl.style.display = 'none';
-  document.getElementById('projectName').textContent = state.projectName || 'DWS Dashboard';
+  try {
+    state = normalizeState(state);
+    const emptyEl = document.getElementById('emptyState');
+    if (emptyEl) emptyEl.style.display = 'none';
+    document.getElementById('projectName').textContent = state.projectName || 'DWS Dashboard';
 
-  // Show dashboard URL link if available
-  if (state.dashboardUrl) {
-    const link = document.getElementById('dashboardUrlLink');
-    if (link) { link.href = state.dashboardUrl; link.style.display = 'inline'; }
+    // Show dashboard URL link if available
+    if (state.dashboardUrl) {
+      const link = document.getElementById('dashboardUrlLink');
+      if (link) { link.href = state.dashboardUrl; link.style.display = 'inline'; }
+    }
+
+    // Status badge
+    const badge = document.getElementById('statusBadge');
+    const statusText = {
+      'not-started': '未开始', 'in-progress': '进行中', 'blocked': '已阻塞',
+      'consensus-loop': '共识闭环', 'tdd-loop': 'TDD闭环',
+      'completed': '已完成', 'failed': '失败', 'starting': '启动中'
+    };
+    badge.textContent = statusText[state.overallStatus] || state.overallStatus || '未开始';
+    badge.className = 'status-badge ' + (state.overallStatus || 'not-started');
+
+    // Phase label
+    const currentPhaseData = PHASES[state.currentPhase];
+    document.getElementById('phaseLabel').textContent = currentPhaseData
+      ? `${currentPhaseData.fullName}${state.currentIteration > 1 ? ' (迭代 ' + state.currentIteration + ')' : ''}`
+      : (state.overallStatus || '');
+
+    renderTimeline(state);
+    renderGlobalQuestionPanel(state);
+    renderPhaseDetail(state);
+    renderSidePanel(state);
+    handleQuestionNotification(state);
+  } catch (err) {
+    console.error('[DWS] renderState error:', err);
   }
-
-  // Status badge
-  const badge = document.getElementById('statusBadge');
-  const statusText = {
-    'not-started': '未开始', 'in-progress': '进行中', 'blocked': '已阻塞',
-    'consensus-loop': '共识闭环', 'tdd-loop': 'TDD闭环',
-    'completed': '已完成', 'failed': '失败'
-  };
-  badge.textContent = statusText[state.overallStatus] || state.overallStatus;
-  badge.className = 'status-badge ' + (state.overallStatus || 'not-started');
-
-  // Phase label
-  const currentPhaseData = PHASES[state.currentPhase];
-  document.getElementById('phaseLabel').textContent = currentPhaseData
-    ? `${currentPhaseData.fullName}${state.currentIteration > 1 ? ' (迭代 ' + state.currentIteration + ')' : ''}`
-    : '';
-
-  renderTimeline(state);
-  renderGlobalQuestionPanel(state);
-  renderPhaseDetail(state);
-  renderSidePanel(state);
-  handleQuestionNotification(state);
 }
 
 function renderTimeline(state) {
   const el = document.getElementById('timeline');
   const phases = state.phases || [];
   let html = '';
+
+  if (phases.length === 0) {
+    // Show placeholder timeline when no phases data
+    PHASES.forEach((p, i) => {
+      if (i > 0) html += '<div class="phase-connector"></div>';
+      html += `<div class="phase-node pending" data-phase="${p.id}">
+        <div class="phase-circle">${p.id}</div>
+        <div class="phase-name">${p.name}</div>
+      </div>`;
+    });
+    el.innerHTML = html;
+    return;
+  }
 
   phases.forEach((p, i) => {
     if (i > 0) {
@@ -632,10 +673,27 @@ function selectPhase(id) {
 function renderPhaseDetail(state) {
   const el = document.getElementById('panelMain');
   const phaseId = selectedPhase !== null ? selectedPhase : state.currentPhase;
-  const phase = (state.phases || []).find(p => p.id === phaseId);
+  const phases = state.phases || [];
+  const phase = phases.find(p => p.id === phaseId);
 
-  if (!phase) {
-    el.innerHTML = '<div class="empty-state"><p>无阶段数据</p></div>';
+  if (!phase || phases.length === 0) {
+    // Show project overview when no phases yet (e.g. early init or different schema)
+    let html = '<div class="phase-detail">';
+    html += `<h2>${escHtml(state.projectName || '项目')}</h2>`;
+    if (state.description) {
+      html += `<div class="phase-meta" style="margin-bottom:12px">${escHtml(state.description)}</div>`;
+    }
+    html += `<div class="phase-meta">${statusLabel(state.overallStatus || 'not-started')}`;
+    if (state.startedAt || state.timestamp) html += ` &middot; 开始: ${fmtTime(state.startedAt || state.timestamp)}`;
+    html += '</div>';
+    if (phases.length === 0) {
+      html += '<div style="margin-top:24px;padding:20px;background:var(--c-surface2);border-radius:var(--radius);color:var(--c-text2);font-size:13px;line-height:1.8">';
+      html += '<div style="font-weight:500;color:var(--c-text);margin-bottom:8px">工作流尚未初始化</div>';
+      html += '<div>阶段数据将在工作流启动后自动出现。请确认 CC 已开始执行工作流技能。</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+    el.innerHTML = html;
     return;
   }
 
