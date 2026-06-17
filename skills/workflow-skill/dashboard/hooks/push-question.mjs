@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-// PreToolUse hook for AskUserQuestion — pushes question data to Dashboard server
-// Always allows AskUserQuestion to proceed (CLI is the primary channel).
-// When Dashboard is running, also pushes question there as supplementary display.
-// Injects additionalContext so CC knows it can check Dashboard for answers.
+// PreToolUse hook for AskUserQuestion — pushes question to Dashboard and blocks the tool
+// When Dashboard is running: pushes question + BLOCKS AskUserQuestion + tells CC to poll
+// When Dashboard is not running: exits silently (AskUserQuestion proceeds normally)
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
 import { join, resolve } from 'path';
@@ -38,6 +37,22 @@ function findDashboardPorts() {
     }
   } catch {}
   return ports;
+}
+
+// ── Find project root and name from .dws ───────────
+function findProjectInfo() {
+  const dwsRoot = findDwsRoot();
+  if (!dwsRoot) return null;
+  const root = resolve(dwsRoot, '..');
+  try {
+    const entries = readdirSync(dwsRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory() && existsSync(join(dwsRoot, entry.name, '.dashboard.port'))) {
+        return { root, name: entry.name };
+      }
+    }
+  } catch {}
+  return null;
 }
 
 // ── Debug logging ──────────────────────────────────
@@ -158,19 +173,51 @@ async function main() {
       process.exit(0);
     }
 
-    // Push to Dashboard if running
-    const pushed = await pushQuestion(payload);
-    if (pushed) {
-      debug('Question pushed to Dashboard, AskUserQuestion proceeds normally');
-
-      // Inject context so CC knows Dashboard answer may exist later
-      console.log(JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          additionalContext: '问题已同步到 Dashboard。用户可在 Dashboard 或 CLI 中回答。如果后续需要在 CLI 之外获取 Dashboard 的回答，可用 dashboard-ask.mjs --poll-only 轮询，或在恢复工作流时检查 workflow-state.json 中的 pendingQuestion.answer。'
-        }
-      }));
+    // Check if Dashboard is actually running
+    const ports = findDashboardPorts();
+    if (ports.length === 0) {
+      debug('No Dashboard running, allowing AskUserQuestion');
+      process.exit(0);
     }
+
+    // Push question to Dashboard
+    const pushed = await pushQuestion(payload);
+    if (!pushed) {
+      debug('Dashboard push failed, allowing AskUserQuestion as fallback');
+      process.exit(0);
+    }
+
+    // Dashboard running + question pushed → BLOCK AskUserQuestion
+    // CC should use dashboard-ask.mjs --poll-only to get the answer
+    const projectInfo = findProjectInfo();
+    const projectRoot = projectInfo ? projectInfo.root : process.cwd();
+    const projectName = projectInfo ? projectInfo.name : 'default';
+    const askScript = join(resolve(import.meta.dirname), 'dashboard-ask.mjs').replace(/\\/g, '/');
+
+    debug('Blocking AskUserQuestion, redirecting to dashboard-ask.mjs --poll-only');
+
+    console.log(JSON.stringify({
+      continue: false,
+      stopReason: '问题已推送到 Dashboard，请在 Dashboard 中回答。CC 将轮询等待答案。',
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        additionalContext: [
+          'AskUserQuestion 已被拦截——问题已推送到 Dashboard。',
+          '请立即执行以下 Bash 命令轮询等待用户在 Dashboard 中的回答（超时24小时，覆盖隔夜场景）：',
+          '',
+          `RESULT=$(node "${askScript}" --project-root "${projectRoot}" --project-name "${projectName}" --poll-only --timeout 86400)`,
+          'if echo "$RESULT" | grep -q "^ANSWER_RECEIVED:"; then',
+          '  ANSWER=$(echo "$RESULT" | sed \'s/^ANSWER_RECEIVED://\')',
+          '  # 解析 ANSWER JSON 并继续工作流',
+          'elif [ "$RESULT" = "ANSWER_TIMEOUT" ]; then',
+          '  # 超时24小时，回退到 AskUserQuestion 让用户在 CLI 回答',
+          'fi',
+          '',
+          '如果轮询超时，必须回退使用 AskUserQuestion 让用户在 CLI 中回答。',
+          '如果会话中断后恢复，先检查 workflow-state.json 中是否有遗留的 Dashboard 答案。'
+        ].join('\n')
+      }
+    }));
   } catch (e) {
     debug(`Fatal: ${e.message}`);
   }
