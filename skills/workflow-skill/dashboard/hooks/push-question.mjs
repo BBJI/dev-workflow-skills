@@ -197,12 +197,15 @@ async function main() {
     debug('Blocking AskUserQuestion, redirecting to dashboard-ask.mjs --poll-only');
 
     console.log(JSON.stringify({
+      systemMessage: '问题已推送到 Dashboard，请在 Dashboard 中回答。CC 将自动轮询等待答案。',
       continue: false,
-      stopReason: '问题已推送到 Dashboard，请在 Dashboard 中回答。CC 将轮询等待答案。',
+      stopReason: '问题已推送到 Dashboard，请在 Dashboard 中回答',
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: 'Dashboard 正在运行，请在 Dashboard 中回答问题，CC 将轮询获取答案',
         additionalContext: [
-          'AskUserQuestion 已被拦截——问题已推送到 Dashboard。',
+          'AskUserQuestion 已被拒绝——问题已推送到 Dashboard。',
           '请立即执行以下 Bash 命令轮询等待用户在 Dashboard 中的回答（超时24小时，覆盖隔夜场景）：',
           '',
           `RESULT=$(node "${askScript}" --project-root "${projectRoot}" --project-name "${projectName}" --poll-only --timeout 86400)`,
