@@ -209,6 +209,34 @@ function ensureStep(phase, stepId, name) {
   });
 }
 
+// ── Step auto-advance helpers (mirror server.mjs) ──
+// CC is unreliable about sending --status in-progress. Keep the dashboard
+// honest even on the fallback path: when a step goes in-progress, complete
+// any stale in-progress sibling; when a step reaches a terminal state,
+// promote the next pending step so the dashboard always shows current work.
+function markSiblingsCompleted(phase, exceptStepId, now) {
+  if (!Array.isArray(phase.steps)) return;
+  for (const s of phase.steps) {
+    if (s.id === exceptStepId) continue;
+    if (s.status === 'in-progress') {
+      s.status = 'completed';
+      if (!s.startedAt) s.startedAt = now;
+      s.completedAt = now;
+    }
+  }
+}
+
+function promoteNextPending(phase, now) {
+  if (!Array.isArray(phase.steps)) return;
+  const hasActive = phase.steps.some(s => s.status === 'in-progress');
+  if (hasActive) return;
+  const next = phase.steps.find(s => s.status === 'pending');
+  if (next) {
+    next.status = 'in-progress';
+    next.startedAt = now;
+  }
+}
+
 // ── Direct file mutation fallbacks ─────────────────
 function fallbackStep(stateFile, phaseId, stepId, status, detail, result, phaseName, stepName) {
   const state = readStateFile(stateFile);
@@ -224,10 +252,17 @@ function fallbackStep(stateFile, phaseId, stepId, status, detail, result, phaseN
   const prevStatus = step.status;
   step.status = status;
   const now = new Date().toISOString();
-  if (status === 'in-progress' && !step.startedAt) step.startedAt = now;
+  if (status === 'in-progress' && !step.startedAt) {
+    step.startedAt = now;
+    markSiblingsCompleted(phase, stepId, now);
+  }
   if (['completed', 'blocked', 'skipped'].includes(status)) step.completedAt = now;
   if (detail !== undefined) step.detail = detail;
   if (result !== undefined) step.result = result;
+
+  if (['completed', 'blocked', 'skipped'].includes(status)) {
+    promoteNextPending(phase, now);
+  }
 
   if (prevStatus !== status) {
     const level = status === 'completed' ? 'success' : status === 'blocked' ? 'error' : 'info';

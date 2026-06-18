@@ -214,6 +214,37 @@ function pushActivity(state, phase, action, message, level) {
   }
 }
 
+// ── Step auto-advance helpers ───────────────────────
+// CC is unreliable about sending --status in-progress. It often jumps straight
+// to --status completed without ever marking the step (or the previous one) as
+// in-progress. These helpers keep the dashboard honest:
+//   - markSiblingsCompleted: when a step goes in-progress, complete any other
+//     in-progress step in the same phase (you can't have two at once)
+//   - promoteNextPending: when a step reaches a terminal state, promote the
+//     next pending step so the dashboard always shows what CC is doing now
+function markSiblingsCompleted(phase, exceptStepId, now) {
+  if (!Array.isArray(phase.steps)) return;
+  for (const s of phase.steps) {
+    if (s.id === exceptStepId) continue;
+    if (s.status === 'in-progress') {
+      s.status = 'completed';
+      if (!s.startedAt) s.startedAt = now;
+      s.completedAt = now;
+    }
+  }
+}
+
+function promoteNextPending(phase, now) {
+  if (!Array.isArray(phase.steps)) return;
+  const hasActive = phase.steps.some(s => s.status === 'in-progress');
+  if (hasActive) return;
+  const next = phase.steps.find(s => s.status === 'pending');
+  if (next) {
+    next.status = 'in-progress';
+    next.startedAt = now;
+  }
+}
+
 // ── Shared: apply state mutation + persist + broadcast ──
 function mutateState(fn) {
   let state = readStateFile();
@@ -358,12 +389,22 @@ app.post('/api/state/step', (req, res) => {
 
     if (status === 'in-progress' && !step.startedAt) {
       step.startedAt = now;
+      // Only one in-progress step per phase — complete any stale ones
+      // (CC often forgets to send completed for the previous step)
+      markSiblingsCompleted(phase, stepId, now);
     }
     if (['completed', 'blocked', 'skipped'].includes(status)) {
       step.completedAt = now;
     }
     if (detail !== undefined) step.detail = detail;
     if (result !== undefined) step.result = result;
+
+    // Auto-advance: when a step reaches a terminal state, promote the next
+    // pending step in the same phase so the dashboard always reflects what
+    // CC is doing now — even when CC only sends `completed` notifications.
+    if (['completed', 'blocked', 'skipped'].includes(status)) {
+      promoteNextPending(phase, now);
+    }
 
     // Activity log for state transitions
     if (prevStatus !== status) {
