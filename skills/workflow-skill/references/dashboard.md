@@ -117,16 +117,16 @@
 
 ## Dashboard 问答模式
 
-**当 Dashboard 运行时，`AskUserQuestion` 会被 Hook 自动拦截**——问题推送到 Dashboard，CC 改用轮询获取答案。
+**当 Dashboard 运行时，`AskUserQuestion` 会被 Hook 自动拦截**——问题推送到 Dashboard，CC 通过 SSE 订阅等待答案。
 
-**为什么拦截？** `AskUserQuestion` 是阻塞式工具，CC 调用后只能等 CLI 输入，Dashboard 的回答无法注入回去。拦截后 CC 用 `dashboard-ask.mjs --poll-only` 主动轮询，用户在 Dashboard 回答后 CC 自动继续。
+**为什么拦截？** `AskUserQuestion` 是阻塞式工具，CC 调用后只能等 CLI 输入，Dashboard 的回答无法注入回去。拦截后 CC 用 `dashboard-ask.mjs --listen-only` 订阅 Dashboard 的 SSE 事件流，用户在 Dashboard 回答后 CC 秒级感知并自动继续。
 
 **自动拦截机制**：`PreToolUse` Hook（`push-question.mjs`）检测到 Dashboard 运行时：
 1. 将问题推送到 Dashboard
 2. **阻止** `AskUserQuestion` 调用
-3. 注入 `additionalContext`，指示 CC 用 `dashboard-ask.mjs --poll-only` 轮询答案（超时24小时）
+3. 注入 `additionalContext`，指示 CC 用 `dashboard-ask.mjs --listen-only` 等待答案（超时24小时）
 
-**超时处理**：轮询24小时无回答 → 回退到 `AskUserQuestion`，用户在 CLI 回答。`dashboard-ask.mjs` 在轮询过程中会检测 Dashboard 进程是否仍然存活——若 Dashboard 中途崩溃，立即返回 `DASHBOARD_GONE` 让 CC 回退到 `AskUserQuestion`，避免傻等 24 小时。
+**超时处理**：等待24小时无回答 → 回退到 `AskUserQuestion`，用户在 CLI 回答。`dashboard-ask.mjs` 通过 SSE 连接感知 Dashboard 是否存活——若 Dashboard 中途崩溃，SSE 连接立即关闭，脚本返回 `DASHBOARD_GONE` 让 CC 回退到 `AskUserQuestion`，避免傻等 24 小时。
 
 **会话恢复**：如果 CC 会话中断（如关机），恢复时先检查状态文件中是否有遗留的 Dashboard 答案：
 ```bash
@@ -147,7 +147,7 @@ CC 调用 AskUserQuestion
     │   │
     │   ├─ Dashboard 运行 → 拦截 AskUserQuestion
     │   │   → 问题自动推送到 Dashboard
-    │   │   → CC 用 dashboard-ask.mjs --poll-only 轮询（24h超时）
+    │   │   → CC 用 dashboard-ask.mjs --listen-only 订阅 SSE（24h超时）
     │   │   → 用户在 Dashboard 回答 → CC 自动继续
     │   │   → 24h超时 → 回退 AskUserQuestion
     │   │   → Dashboard 中途崩溃 → DASHBOARD_GONE → 回退 AskUserQuestion

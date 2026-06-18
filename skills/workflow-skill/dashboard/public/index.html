@@ -729,8 +729,8 @@ function renderPhaseDetail(state) {
   let html = '';
 
   html += `<div class="phase-detail">
-    <h2>${PHASES[phase.id]?.fullName || phase.name}</h2>
-    <div class="phase-meta">${phase.skill || ''}${phase.skill ? ' &middot; ' : ''}${statusLabel(phase.status)}`;
+    <h2>${PHASES[phase.id]?.fullName || escHtml(phase.name)}</h2>
+    <div class="phase-meta">${escHtml(phase.skill || '')}${phase.skill ? ' &middot; ' : ''}${statusLabel(phase.status)}`;
   if (phase.startedAt) html += ` &middot; 开始: ${fmtTime(phase.startedAt)}`;
   if (phase.completedAt) html += ` &middot; 完成: ${fmtTime(phase.completedAt)}`;
   html += '</div>';
@@ -743,7 +743,7 @@ function renderPhaseDetail(state) {
       const hasDetail = step.detail || step.result || step.startedAt;
       html += `<div class="step-item ${step.status}${isExpanded ? ' expanded' : ''}" onclick="toggleStep('${step.id}')">
         <div class="step-icon">${STEP_ICONS[step.status] || ''}</div>
-        <span class="step-name">${step.name}</span>
+        <span class="step-name">${escHtml(step.name)}</span>
         ${step.detail ? `<span class="step-detail-inline">${escHtml(step.detail)}</span>` : ''}
         ${step.status !== 'pending' ? `<span class="step-time">${fmtDuration(step.startedAt, step.completedAt)}</span>` : ''}
         ${hasDetail ? '<span class="step-expand">&#9654;</span>' : ''}
@@ -774,7 +774,7 @@ function renderPhaseDetail(state) {
         html += '<div class="detail-section"><div class="detail-label">阶段产物</div><div class="detail-artifacts">';
         phase.artifacts.forEach(a => {
           const icon = a.type === 'html' ? '&#128196;' : a.type === 'markdown' ? '&#128221;' : '&#128206;';
-          html += `<a class="detail-artifact-link" onclick="event.stopPropagation();openArtifact('${escAttr(a.path)}','${a.type}','${escAttr(a.name)}')">${icon} ${a.name}</a>`;
+          html += `<a class="detail-artifact-link" onclick="event.stopPropagation();openArtifact('${escAttr(a.path)}','${a.type}','${escAttr(a.name)}')">${icon} ${escHtml(a.name)}</a>`;
         });
         html += '</div></div>';
       }
@@ -790,8 +790,8 @@ function renderPhaseDetail(state) {
       const icon = a.type === 'html' ? '&#128196;' : a.type === 'markdown' ? '&#128221;' : '&#128206;';
       html += `<div class="artifact-item" onclick="openArtifact('${escAttr(a.path)}','${a.type}','${escAttr(a.name)}')">
         <span class="artifact-icon">${icon}</span>
-        <span class="artifact-name">${a.name}</span>
-        <span class="artifact-type">${a.type}</span>
+        <span class="artifact-name">${escHtml(a.name)}</span>
+        <span class="artifact-type">${escHtml(a.type)}</span>
       </div>`;
     });
     html += '</div></div>';

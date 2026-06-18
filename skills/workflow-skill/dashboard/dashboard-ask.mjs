@@ -3,7 +3,7 @@
 // Usage:
 //   Push + wait:  node dashboard-ask.mjs --project-root ... --project-name ... --question "text" --header "title" --options '[...]'
 //   Push + wait:  node dashboard-ask.mjs --project-root ... --project-name ... --questions '[{...},{...}]'
-//   Poll only:    node dashboard-ask.mjs --project-root ... --project-name ... --poll-only [--timeout 1800]
+//   Listen only:  node dashboard-ask.mjs --project-root ... --project-name ... --listen-only [--timeout 1800]
 //
 // Exit codes / output prefixes (parsed by CC):
 //   ANSWER_RECEIVED:<json>  — got an answer, return immediately
@@ -123,7 +123,9 @@ async function main() {
   const args = parseArgs();
   const projectRoot = resolve(toWinPath(args['project-root']) || process.cwd());
   const projectName = args['project-name'] || 'default';
-  const pollOnly = !!args['poll-only'];
+  // --listen-only skips the push step and just waits. (--poll-only is accepted
+  // as a deprecated alias from when this script polled the state file.)
+  const listenOnly = !!(args['listen-only'] || args['poll-only']);
 
   if (!isDashboardRunning(projectRoot, projectName)) {
     console.log('DASHBOARD_NOT_RUNNING');
@@ -134,8 +136,8 @@ async function main() {
   const scriptDir = resolve(import.meta.dirname);
   const notifyState = join(scriptDir, 'notify-state.mjs');
 
-  // Step 1: Push question (skip if --poll-only)
-  if (!pollOnly) {
+  // Step 1: Push question (skip if --listen-only)
+  if (!listenOnly) {
     let pushCmd;
     if (args.questions) {
       const tmpFile = join(projectRoot, '.dws', projectName, '.tmp', 'questions.json');
@@ -155,7 +157,7 @@ async function main() {
       writeFileSync(tmpFile, JSON.stringify([payload]), 'utf-8');
       pushCmd = `node "${notifyState}" --project-root "${projectRoot}" --project-name "${projectName}" --type question --questions @"${tmpFile}"`;
     } else {
-      console.error('Usage: --question "text" --options [...] or --questions [...]  or --poll-only');
+      console.error('Usage: --question "text" --options [...] or --questions [...]  or --listen-only');
       process.exit(1);
     }
 

@@ -1,3 +1,10 @@
+// ── Node.js version check (top-level, before any work) ──
+const nodeVersion = parseInt(process.version.slice(1).split('.')[0]);
+if (nodeVersion < 14) {
+  console.error(`Dashboard requires Node.js 14+. Current: ${process.version}`);
+  process.exit(1);
+}
+
 // ── Dependency check ─────────────────────────────────
 try {
   await import('express');
@@ -32,7 +39,10 @@ const PORT_FILE = join(DWS_DIR, '.dashboard.port');
 const app = express();
 const server = createServer(app);
 
-app.use(express.json());
+// Cap request body at 1 MB — state files are small (<100 KB typical), anything
+// larger is either a bug or an abuse attempt. Without this, express.json() will
+// happily buffer arbitrarily large payloads into memory.
+app.use(express.json({ limit: '1mb' }));
 
 const clients = new Set();
 let currentState = null;
@@ -138,7 +148,7 @@ function handleBackpressure(res) {
 }
 
 function forceDisconnect(res) {
-  try { res.end(); } catch {}
+  try { res.destroy(); } catch {}
   clients.delete(res);
 }
 
@@ -598,7 +608,10 @@ app.get('/events', (req, res) => {
 
   clients.add(res);
 
-  // Heartbeat
+  // Heartbeat — keeps the SSE connection alive through proxies and lets us
+  // detect dead clients quickly. Tunable via DWS_HEARTBEAT_MS for environments
+  // with aggressive idle timeouts.
+  const heartbeatMs = parseInt(process.env.DWS_HEARTBEAT_MS) || 30000;
   const heartbeat = setInterval(() => {
     try {
       res.write(': heartbeat\n\n');
@@ -606,7 +619,7 @@ app.get('/events', (req, res) => {
       clearInterval(heartbeat);
       clients.delete(res);
     }
-  }, 30000);
+  }, heartbeatMs);
 
   req.on('close', () => {
     clearInterval(heartbeat);
@@ -621,9 +634,12 @@ app.get('/events', (req, res) => {
 app.get('/artifacts/*', (req, res) => {
   const reqPath = req.params[0];
   const filePath = resolve(PROJECT_ROOT, reqPath);
+  const root = resolve(PROJECT_ROOT);
 
-  // Prevent directory traversal
-  if (!filePath.startsWith(resolve(PROJECT_ROOT))) {
+  // Prevent directory traversal — must use separator boundary, otherwise
+  // `/artifacts/../sibling-secret` would pass `startsWith(root)` check.
+  const sep = process.platform === 'win32' ? '\\' : '/';
+  if (filePath !== root && !filePath.startsWith(root + sep)) {
     return res.status(403).send('Forbidden');
   }
 
@@ -632,30 +648,23 @@ app.get('/artifacts/*', (req, res) => {
   }
 
   const ext = extname(filePath).toLowerCase();
-  const mime = MIME[ext] || 'application/octet-stream';
+  const mime = ext === '.md' ? 'text/plain; charset=utf-8' : (MIME[ext] || 'application/octet-stream');
 
   res.setHeader('Content-Type', mime);
 
-  if (ext === '.md') {
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    try {
-      res.sendFile(filePath);
-    } catch {
-      res.status(500).send('Error reading file');
-    }
-  } else if (!MIME[ext]) {
+  if (!MIME[ext] && ext !== '.md') {
     res.setHeader('Content-Disposition', `attachment; filename="${reqPath.split('/').pop()}"`);
-    res.sendFile(filePath);
-  } else {
-    res.sendFile(filePath);
   }
+  res.sendFile(filePath);
 });
 
 // ── Open browser ────────────────────────────────────
 function openBrowser(url) {
-  const cmd = process.platform === 'win32' ? `start ${url}`
-    : process.platform === 'darwin' ? `open ${url}`
-    : `xdg-open ${url}`;
+  // Quote URL to prevent shell metacharacter interpretation. On Windows,
+  // `start` treats the first quoted arg as a window title, so pass empty "".
+  const cmd = process.platform === 'win32' ? `start "" "${url}"`
+    : process.platform === 'darwin' ? `open "${url}"`
+    : `xdg-open "${url}"`;
   exec(cmd, (err) => {
     if (err) console.log(`  (Could not auto-open browser: ${err.message})`);
   });
@@ -674,11 +683,8 @@ function startServer(port) {
     writeFileSync(PID_FILE, String(process.pid));
     writeFileSync(PORT_FILE, String(port));
 
-    // Start watching state file
+    // Start watching state file (watcher loads initial state via 'add' event)
     startWatcher();
-
-    // Try to load initial state
-    currentState = readStateFile();
 
     // Auto-open browser
     openBrowser(`http://localhost:${port}`);
@@ -706,13 +712,6 @@ function shutdown() {
   }
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000);
-}
-
-// ── Node.js version check ──────────────────────────
-const nodeVersion = parseInt(process.version.slice(1).split('.')[0]);
-if (nodeVersion < 14) {
-  console.error(`Dashboard requires Node.js 14+. Current: ${process.version}`);
-  process.exit(1);
 }
 
 startServer(PORT);

@@ -19,13 +19,13 @@
   ],
   "category": "development",
   "skills": [
-    "./.claude/skills/workflow-skill",
-    "./.claude/skills/req-analysis-skill",
-    "./.claude/skills/design-skill",
-    "./.claude/skills/review-skill",
-    "./.claude/skills/task-allocation-skill",
-    "./.claude/skills/dev-skill",
-    "./.claude/skills/test-skill",
-    "./.claude/skills/instruction-skill"
+    "./skills/workflow-skill",
+    "./skills/req-analysis-skill",
+    "./skills/design-skill",
+    "./skills/review-skill",
+    "./skills/task-allocation-skill",
+    "./skills/dev-skill",
+    "./skills/test-skill",
+    "./skills/instruction-skill"
   ]
 }

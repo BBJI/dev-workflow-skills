@@ -51,7 +51,7 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, LSP, Agent,
 默认全自主模式，仅最终交付检查点暂停。如用户指定半自主模式，则每个阶段完成后暂停等待用户确认。
 
 ### 4. 问答策略
-**Dashboard 运行时 Hook 自动拦截 `AskUserQuestion`**——问题推送到 Dashboard，CC 用 `dashboard-ask.mjs --poll-only` 轮询答案（24h超时）。用户在 Dashboard 回答后 CC 自动继续。Dashboard 未运行时回退到 `AskUserQuestion`。恢复会话时检查状态文件中的遗留答案。详见 SKILL.md 中的「Dashboard 问答模式」章节。
+**Dashboard 运行时 Hook 自动拦截 `AskUserQuestion`**——问题推送到 Dashboard，CC 用 `dashboard-ask.mjs --listen-only` 通过 SSE 订阅答案（24h超时）。用户在 Dashboard 回答后 CC 自动继续。Dashboard 未运行时回退到 `AskUserQuestion`。恢复会话时检查状态文件中的遗留答案。详见 SKILL.md 中的「Dashboard 问答模式」章节。
 
 ---
 

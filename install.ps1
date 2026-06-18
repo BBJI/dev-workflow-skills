@@ -341,28 +341,10 @@ if ($Claude) {
             Copy-Item (Join-Path $marketDir "README.md") $cacheDir
         }
 
-        # 创建 .claude/skills/ 目录（Claude Code 加载技能的标准路径）
-        $claudeSkillsDir = Join-Path $cacheDir ".claude\skills"
-        New-Item -ItemType Directory -Path $claudeSkillsDir -Force | Out-Null
-        $skillsDir = Join-Path $cacheDir "skills"
-        if (Test-Path $skillsDir) {
-            Get-ChildItem $skillsDir -Directory | ForEach-Object {
-                Copy-Item $_.FullName $claudeSkillsDir -Recurse
-            }
-        }
-
-        # Install dashboard dependencies in .claude/skills copy too (Windows path length may skip node_modules during Copy-Item)
-        $claudeDashboardDir = Join-Path $claudeSkillsDir "workflow-skill\dashboard"
-        if ((Test-Path $claudeDashboardDir) -and (Test-Path (Join-Path $claudeDashboardDir "package.json")) -and -not (Test-Path (Join-Path $claudeDashboardDir "node_modules"))) {
-            Write-Host "  Installing dashboard dependencies in .claude/skills copy..." -ForegroundColor Gray
-            Push-Location $claudeDashboardDir
-            & npm install --omit=dev 2>$null
-            if (Test-Path (Join-Path $claudeDashboardDir "node_modules")) {
-                Write-Host "  [OK] Dashboard dependencies installed in .claude/skills" -ForegroundColor Green
-            } else {
-                Write-Host "  [WARN] Dashboard dependencies installation in .claude/skills failed" -ForegroundColor Yellow
-            }
-            Pop-Location
+        # 清理可能残留的旧版 .claude/skills/ 副本（plugin.json 现直接引用 ./skills/）
+        $legacyClaudeSkillsDir = Join-Path $cacheDir ".claude\skills"
+        if (Test-Path $legacyClaudeSkillsDir) {
+            Remove-Item $legacyClaudeSkillsDir -Recurse -Force -ErrorAction SilentlyContinue
         }
 
         # 更新 installed_plugins.json

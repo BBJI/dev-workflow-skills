@@ -423,7 +423,7 @@ Loop Engineering 用**收敛反馈闭环**替代线性流程：
 
 ### Dashboard 问答模式
 
-当 Dashboard 运行时，`AskUserQuestion` 会被 PreToolUse Hook 自动拦截——问题推送到 Dashboard，CC 改用 `dashboard-ask.mjs --poll-only` 轮询获取答案。Dashboard 中途崩溃或超时 24h 时自动回退到 `AskUserQuestion`。完整机制（拦截原理、会话恢复、答案格式、Hook 配置）见 [references/dashboard.md](./references/dashboard.md) "Dashboard 问答模式"。
+当 Dashboard 运行时，`AskUserQuestion` 会被 PreToolUse Hook 自动拦截——问题推送到 Dashboard，CC 改用 `dashboard-ask.mjs --listen-only` 通过 SSE 订阅等待答案。Dashboard 中途崩溃或超时 24h 时自动回退到 `AskUserQuestion`。完整机制（拦截原理、会话恢复、答案格式、Hook 配置）见 [references/dashboard.md](./references/dashboard.md) "Dashboard 问答模式"。
 
 ## 输出
 

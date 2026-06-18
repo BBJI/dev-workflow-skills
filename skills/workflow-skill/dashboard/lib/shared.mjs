@@ -3,8 +3,9 @@
 // (parseArgs, toWinPath, state file I/O, phase/step helpers, auto-advance)
 // in one place so bug fixes only need to happen once.
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, renameSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, renameSync, mkdirSync, unlinkSync } from 'fs';
 import { join, resolve, dirname, basename, relative } from 'path';
+import { createHash } from 'crypto';
 
 // ── CLI arg parsing ────────────────────────────────
 // Parses --key value (or --key flag) into an object. Used by every dashboard
@@ -40,8 +41,10 @@ export function toWinPath(p) {
 // CLI/hook callers pass IDs as strings ("1"); state stores them as numbers (1).
 // Without normalization, `p.id === phaseId` matches fail silently. Numeric
 // strings become numbers; everything else (e.g. "req-step-1") stays a string.
+// Empty string is treated as missing — Number('') === 0 would otherwise turn
+// an absent phaseId into phase 0.
 export function parseId(val) {
-  if (val === undefined || val === null) return val;
+  if (val === undefined || val === null || val === '') return undefined;
   const n = Number(val);
   return Number.isNaN(n) ? val : n;
 }
@@ -69,14 +72,17 @@ export function scanPhaseArtifacts(projectRoot, projectName, phaseId) {
   const dir = join(dwsDir, config.dir);
   if (!existsSync(dir)) return [];
   const out = [];
-  const walk = (d) => {
+  // Depth limit guards against runaway recursion into deep/symlinked trees.
+  const MAX_DEPTH = 5;
+  const walk = (d, depth) => {
+    if (depth > MAX_DEPTH) return;
     for (const name of readdirSync(d)) {
       const full = join(d, name);
       let st;
       try { st = statSync(full); } catch { continue; }
       if (st.isDirectory()) {
         if (name === '.serve' || name === 'screenshots' || name === '.tmp') continue;
-        walk(full);
+        walk(full, depth + 1);
       } else {
         if (config.pattern && !config.pattern.test(name)) continue;
         const rel = relative(dwsDir, full).replace(/\\/g, '/');
@@ -84,7 +90,7 @@ export function scanPhaseArtifacts(projectRoot, projectName, phaseId) {
       }
     }
   };
-  walk(dir);
+  walk(dir, 0);
   return out;
 }
 
@@ -108,17 +114,24 @@ export function readStateFile(stateFile) {
 
 export function writeStateFileAtomic(stateFile, state) {
   const tmp = stateFile + '.tmp';
-  writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf-8');
-  renameSync(tmp, stateFile);
+  try {
+    writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf-8');
+    renameSync(tmp, stateFile);
+  } catch (e) {
+    // Clean up the tmp file on failure — otherwise it lingers and the next
+    // successful write sees a stale tmp sibling (harmless but messy).
+    try { if (existsSync(tmp)) unlinkSync(tmp); } catch {}
+    throw e;
+  }
 }
 
 // ── Hashing (for change detection) ─────────────────
+// Used to detect state-file changes between chokidar polls. Cryptographic
+// strength isn't required, but the previous hand-rolled DJB2 had measurable
+// collision rates on large state files (which would cause missed broadcasts).
+// md5 is fast, available everywhere, and collision-free for our use case.
 export function computeHash(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-  }
-  return h;
+  return createHash('md5').update(str).digest('hex');
 }
 
 // ── Dynamic phase/step creation ────────────────────
