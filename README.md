@@ -48,13 +48,13 @@
 ### Windows（PowerShell）
 
 ```powershell
-irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 | iex
+iex (irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1).TrimStart([char]0xFEFF)
 ```
 
 ### Windows（CMD）
 
 ```cmd
-powershell -Command "irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 | iex"
+powershell -Command "iex (irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1).TrimStart([char]0xFEFF)"
 ```
 
 ### macOS / Linux
@@ -65,11 +65,13 @@ curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/ins
 
 安装后重启 Claude Code，即可使用所有 `/req`、`/design`、`/workflow` 等指令。
 
+> **关于 `.TrimStart([char]0xFEFF)`**：install.ps1 保存为 UTF-8 with BOM，确保 Windows PowerShell 5.x 直接执行 `.\install.ps1` 时按 UTF-8 解码（否则按系统码页 GBK 解码导致中文乱码和解析失败）。但 `irm` 把 BOM 字符 `﻿` 带入返回字符串，PS 5.x 的 `iex` 不剥离该字符会导致解析失败，因此管道前显式剥离。PowerShell 7+ 自动剥离 BOM，该调用是 no-op。
+
 ### 同时安装到 Claude Code + Codex
 
 ```powershell
 # PowerShell
-irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 -OutFile install.ps1
+iwr https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 -OutFile install.ps1 -UseBasicParsing
 .\install.ps1 -Codex -Project "C:\my-app"
 ```
 
@@ -84,7 +86,7 @@ curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/ins
 
 ```powershell
 # PowerShell
-irm ... -OutFile install.ps1
+iwr https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 -OutFile install.ps1 -UseBasicParsing
 .\install.ps1 -Repo "https://gitlab.example.com/skills/dev-workflow-skills.git"
 ```
 
@@ -97,7 +99,7 @@ curl -fsSL https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/ins
 
 ```powershell
 # PowerShell
-irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 -OutFile install.ps1
+iwr https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 -OutFile install.ps1 -UseBasicParsing
 .\install.ps1 -Uninstall
 ```
 

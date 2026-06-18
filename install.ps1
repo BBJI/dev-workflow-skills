@@ -36,13 +36,13 @@ Write-Host ""
 if ($Help) {
     Write-Host "用法:"
     Write-Host "  # 一键安装到 Claude Code（PowerShell）"
-    Write-Host "  irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 | iex"
+    Write-Host "  iex (irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1).TrimStart([char]0xFEFF)"
     Write-Host ""
     Write-Host "  # 一键安装到 Claude Code（CMD）"
-    Write-Host '  powershell -Command "irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 | iex"'
+    Write-Host '  powershell -Command "iex (irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1).TrimStart([char]0xFEFF)"'
     Write-Host ""
     Write-Host "  # 同时安装到 Claude Code + Codex"
-    Write-Host "  irm https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 -OutFile install.ps1"
+    Write-Host "  iwr https://raw.githubusercontent.com/BBJI/dev-workflow-skills/master/install.ps1 -OutFile install.ps1 -UseBasicParsing"
     Write-Host '  .\install.ps1 -Codex -Project "C:\my-app"'
     Write-Host ""
     Write-Host "参数:"
@@ -52,6 +52,12 @@ if ($Help) {
     Write-Host "  -Repo <url>       自定义仓库地址"
     Write-Host "  -Uninstall        卸载"
     Write-Host "  -Help             显示帮助"
+    Write-Host ""
+    Write-Host "说明:"
+    Write-Host "  .TrimStart([char]0xFEFF) 用于剥离 UTF-8 BOM 字符。install.ps1"
+    Write-Host "  保存为 UTF-8 with BOM 以确保 PS 5.x 直接运行 .\install.ps1 时"
+    Write-Host "  按 UTF-8 解码（否则按系统码页解码导致中文乱码/解析失败）；但 BOM"
+    Write-Host "  经 irm 返回字符串后会让 PS 5.x 的 iex 解析失败，故需剥离。"
     return
 }
 
