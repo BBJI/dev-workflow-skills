@@ -1,6 +1,6 @@
 ---
 description: 全流程交付 — Loop Engineering闭环从需求到交付一键执行
-allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, LSP, Agent, Skill
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion, LSP, Agent, Skill, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_press_key, mcp__plugin_playwright_playwright__browser_select_option, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_hover, mcp__plugin_playwright_playwright__browser_close
 ---
 
 请使用 `workflow-skill` 技能执行全流程交付。
