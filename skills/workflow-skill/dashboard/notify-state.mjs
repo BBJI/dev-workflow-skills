@@ -10,7 +10,7 @@ import {
   parseArgs, toWinPath, parseId,
   scanPhaseArtifacts, readStateFile, writeStateFileAtomic,
   ensurePhase, ensureStep, pushActivity,
-  markSiblingsCompleted, promoteNextPending,
+  markSiblingsCompleted, promoteNextPending, withStateLock,
 } from './lib/shared.mjs';
 
 // ── HTTP POST helper ────────────────────────────────
@@ -241,6 +241,85 @@ function fallbackSetField(stateFile, field, value) {
   console.log(`OK ${field} set`);
 }
 
+// ── Fallback: consensus tracker (phase 3) ──────────
+// Mirrors server.mjs /api/state/consensus logic. Used when Dashboard API is
+// unreachable — keeps the state file usable so the dashboard catches up on
+// next start.
+function fallbackConsensus(stateFile, round, fatalIssues, highIssues, mediumIssues, lowIssues, status, reqAdjustments, designAdjustments, details) {
+  const state = readStateFile(stateFile);
+  if (!state) { console.error('State file not found:', stateFile); process.exit(1); }
+
+  if (!['completed', 'failed'].includes(state.overallStatus)) {
+    state.overallStatus = 'consensus-loop';
+  }
+  if (!state.consensusTracker) {
+    state.consensusTracker = { rounds: [], currentRound: 0, maxRounds: 5, status: 'in-progress' };
+  }
+  state.consensusTracker.currentRound = round;
+  if (!Array.isArray(state.consensusTracker.rounds)) state.consensusTracker.rounds = [];
+  state.consensusTracker.rounds.push({
+    round,
+    fatalIssues: fatalIssues || 0,
+    highIssues: highIssues || 0,
+    mediumIssues: mediumIssues || 0,
+    lowIssues: lowIssues || 0,
+    status: status || 'consensus-not-reached',
+    reqAdjustments: reqAdjustments || 0,
+    designAdjustments: designAdjustments || 0,
+    details: details || null,
+  });
+  if (status === 'consensus-reached') {
+    state.consensusTracker.status = 'consensus-reached';
+    if (!['completed', 'failed'].includes(state.overallStatus)) state.overallStatus = 'in-progress';
+  } else if (round >= 5) {
+    state.consensusTracker.status = 'escalated';
+  }
+  const level = status === 'consensus-reached' ? 'success' : fatalIssues > 0 ? 'warning' : 'info';
+  pushActivity(state, 3, 'review-round', `第${round}轮: ${fatalIssues}致命, ${highIssues}高优先级问题`, level);
+
+  state.updatedAt = new Date().toISOString();
+  writeStateFileAtomic(stateFile, state);
+  console.log(`OK consensus round ${round} (status=${status || 'consensus-not-reached'})`);
+}
+
+// ── Fallback: bug tracker (phases 6-7) ─────────────
+// Mirrors server.mjs /api/state/bug logic.
+function fallbackBug(stateFile, round, newBugs, fixedBugs, remainingBugs, iterationId, details) {
+  const state = readStateFile(stateFile);
+  if (!state) { console.error('State file not found:', stateFile); process.exit(1); }
+
+  if (!['completed', 'failed'].includes(state.overallStatus)) {
+    state.overallStatus = 'tdd-loop';
+  }
+  if (!state.bugTracker) {
+    state.bugTracker = { rounds: [], currentRound: 0, maxRounds: 3, status: 'in-progress' };
+  }
+  state.bugTracker.currentRound = round;
+  if (!Array.isArray(state.bugTracker.rounds)) state.bugTracker.rounds = [];
+  state.bugTracker.rounds.push({
+    round,
+    newBugs: newBugs || 0,
+    fixedBugs: fixedBugs || 0,
+    remainingBugs: remainingBugs || 0,
+    iterationId: iterationId || null,
+    details: details || null,
+  });
+  if (remainingBugs === 0) {
+    state.bugTracker.status = 'stable';
+    if (!['completed', 'failed'].includes(state.overallStatus)) state.overallStatus = 'in-progress';
+  } else if (round >= 3 && remainingBugs > 0) {
+    state.bugTracker.status = 'escalated';
+  } else {
+    state.bugTracker.status = 'converging';
+  }
+  const level = remainingBugs === 0 ? 'success' : newBugs > 0 ? 'error' : 'info';
+  pushActivity(state, 7, 'test-round', `第${round}轮: ${newBugs}新Bug, ${fixedBugs}已修复, ${remainingBugs}剩余`, level);
+
+  state.updatedAt = new Date().toISOString();
+  writeStateFileAtomic(stateFile, state);
+  console.log(`OK bug round ${round} (remaining=${remainingBugs})`);
+}
+
 // ── Resolve value (inline JSON, @file, or plain string) ────
 function resolveJsonOrFile(val) {
   if (!val) return null;
@@ -266,11 +345,13 @@ async function main() {
   const stateFile = join(projectRoot, '.dws', projectName, 'workflow-state.json');
 
   if (!type) {
-    console.error('Usage: notify-state.mjs --type step|phase|overall|activity|init|dashboard-url|question|question-clear [options]');
+    console.error('Usage: notify-state.mjs --type step|phase|overall|activity|consensus|bug|init|dashboard-url|question|question-clear [options]');
     console.error('  --type step          --phase-id N --step-id xxx --status in-progress|completed [--phase-name ...] [--step-name ...] [--detail ...] [--result ...]');
     console.error('  --type phase         --phase-id N --status in-progress|completed [--phase-name ...] [--artifacts ...]');
     console.error('  --type overall       [--current-phase N] [--overall-status ...] [--current-iteration N] [--total-iterations N]');
     console.error('  --type activity      --phase N --action xxx --message xxx [--level info|success|warning|error]');
+    console.error('  --type consensus     --round N --fatal-issues X --high-issues Y [--medium-issues Z] [--low-issues W] --status consensus-not-reached|consensus-reached [--req-adjustments A] [--design-adjustments B] [--details JSON]');
+    console.error('  --type bug           --round N --new-bugs X --fixed-bugs Y --remaining-bugs Z [--iteration-id ...] [--details JSON]');
     console.error('  --type init          --state-json \'{"projectName":...}\'  or --state-json @path/to/file.json');
     console.error('  --type dashboard-url --url http://localhost:PORT');
     console.error('  --type question      --question "text" --header "title" [--multi-select false] --options \'[{"value":"v1","label":"L1"}]\' or --options @path/to/file.json');
@@ -304,7 +385,11 @@ async function main() {
         };
         if (args['phase-name'] !== undefined) body.phaseName = args['phase-name'];
         if (args.artifacts) {
-          try { body.artifacts = JSON.parse(args.artifacts); } catch { body.artifacts = []; }
+          // Parse failure should not silently discard explicit artifacts —
+          // pass undefined so the server's scanPhaseArtifacts fallback still
+          // registers files from the phase's artifact directory.
+          try { body.artifacts = JSON.parse(args.artifacts); }
+          catch { console.warn('Invalid --artifacts JSON, relying on auto-scan only'); }
         }
         break;
       case 'overall':
@@ -323,6 +408,39 @@ async function main() {
           message: args.message,
           level: args.level || 'info',
         };
+        break;
+      case 'consensus':
+        path = '/api/state/consensus';
+        body = {
+          round: parseInt(args.round, 10),
+          fatalIssues: parseInt(args['fatal-issues'] || '0', 10),
+          highIssues: parseInt(args['high-issues'] || '0', 10),
+          mediumIssues: parseInt(args['medium-issues'] || '0', 10),
+          lowIssues: parseInt(args['low-issues'] || '0', 10),
+          status: args.status || 'consensus-not-reached',
+          reqAdjustments: parseInt(args['req-adjustments'] || '0', 10),
+          designAdjustments: parseInt(args['design-adjustments'] || '0', 10),
+        };
+        if (args.details) {
+          try { body.details = JSON.parse(resolveJsonOrFile(args.details)); } catch {
+            console.error('Invalid --details JSON'); process.exit(1);
+          }
+        }
+        break;
+      case 'bug':
+        path = '/api/state/bug';
+        body = {
+          round: parseInt(args.round, 10),
+          newBugs: parseInt(args['new-bugs'] || '0', 10),
+          fixedBugs: parseInt(args['fixed-bugs'] || '0', 10),
+          remainingBugs: parseInt(args['remaining-bugs'] || '0', 10),
+        };
+        if (args['iteration-id'] !== undefined) body.iterationId = args['iteration-id'];
+        if (args.details) {
+          try { body.details = JSON.parse(resolveJsonOrFile(args.details)); } catch {
+            console.error('Invalid --details JSON'); process.exit(1);
+          }
+        }
         break;
       case 'init':
         path = '/api/state/init';
@@ -380,11 +498,14 @@ async function main() {
     console.warn(`API call failed (status ${result.status}), falling back to file write`);
   }
 
-  // Fallback: direct file write
-  switch (type) {
-    case 'step':
-      fallbackStep(stateFile, parseId(args['phase-id']), args['step-id'], args.status, args.detail, args.result, args['phase-name'], args['step-name']);
-      break;
+  // Fallback: direct file write. Serialize concurrent fallback writers via
+  // a sibling lock file so parallel notify-state processes don't clobber
+  // each other's read-modify-write. See withStateLock in lib/shared.mjs.
+  await withStateLock(stateFile, () => {
+    switch (type) {
+      case 'step':
+        fallbackStep(stateFile, parseId(args['phase-id']), args['step-id'], args.status, args.detail, args.result, args['phase-name'], args['step-name']);
+        break;
     case 'phase':
       fallbackPhase(stateFile, parseId(args['phase-id']), args.status, args.artifacts ? JSON.parse(args.artifacts) : undefined, args['phase-name']);
       break;
@@ -398,6 +519,41 @@ async function main() {
       break;
     case 'activity':
       fallbackActivity(stateFile, parseId(args.phase), args.action, args.message, args.level);
+      break;
+    case 'consensus':
+      try {
+        let details = null;
+        if (args.details) details = JSON.parse(resolveJsonOrFile(args.details));
+        fallbackConsensus(stateFile,
+          parseInt(args.round, 10),
+          parseInt(args['fatal-issues'] || '0', 10),
+          parseInt(args['high-issues'] || '0', 10),
+          parseInt(args['medium-issues'] || '0', 10),
+          parseInt(args['low-issues'] || '0', 10),
+          args.status,
+          parseInt(args['req-adjustments'] || '0', 10),
+          parseInt(args['design-adjustments'] || '0', 10),
+          details
+        );
+      } catch {
+        console.error('Invalid --details JSON'); process.exit(1);
+      }
+      break;
+    case 'bug':
+      try {
+        let details = null;
+        if (args.details) details = JSON.parse(resolveJsonOrFile(args.details));
+        fallbackBug(stateFile,
+          parseInt(args.round, 10),
+          parseInt(args['new-bugs'] || '0', 10),
+          parseInt(args['fixed-bugs'] || '0', 10),
+          parseInt(args['remaining-bugs'] || '0', 10),
+          args['iteration-id'],
+          details
+        );
+      } catch {
+        console.error('Invalid --details JSON'); process.exit(1);
+      }
       break;
     case 'init':
       try {
@@ -452,7 +608,8 @@ async function main() {
         console.error('Failed to clear question'); process.exit(1);
       }
       break;
-  }
+    }
+  });
 }
 
 main().catch(err => {

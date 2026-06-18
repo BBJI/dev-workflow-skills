@@ -222,11 +222,6 @@ Lighthouse 分数无法在 MCP 内取，列入"需人工补测项"。
 
 ## 6. 与 Dashboard 的协作
 
-- 步骤 1.5 完成后广播 `browser-env-ready` 活动（不创建新 step）：
-  ```bash
-  node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-    --type activity --phase 7 --action browser-env-ready \
-    --message "浏览器自动化环境就绪：$URL" --level info
-  ```
+- 步骤 1.5 完成后**不单独广播活动**——"浏览器自动化环境就绪：$URL" 信息放进步骤二开始时的 `--detail` 字段。早期版本曾通过 `--type activity --action browser-env-ready` 广播，但活动日志会触发 Dashboard 的 auto-advance（在没有 in-progress 步骤时将下一个 pending 步骤提前标为 in-progress），造成进度面板与实际执行不同步。
 - 步骤二的 `--detail` 字段记录自动化用例占比，如 `"自动化用例 12/15"`。
 - 测试结束（步骤七完成后）调 `serve-preview.mjs stop` 释放端口。

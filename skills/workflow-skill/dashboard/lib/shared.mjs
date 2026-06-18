@@ -3,7 +3,7 @@
 // (parseArgs, toWinPath, state file I/O, phase/step helpers, auto-advance)
 // in one place so bug fixes only need to happen once.
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, renameSync, mkdirSync, unlinkSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, renameSync, mkdirSync, unlinkSync, openSync, closeSync } from 'fs';
 import { join, resolve, dirname, basename, relative } from 'path';
 import { createHash } from 'crypto';
 
@@ -122,6 +122,71 @@ export function writeStateFileAtomic(stateFile, state) {
     // successful write sees a stale tmp sibling (harmless but messy).
     try { if (existsSync(tmp)) unlinkSync(tmp); } catch {}
     throw e;
+  }
+}
+
+// ── File lock for fallback (direct-write) path ──────
+// notify-state.mjs falls back to read-modify-write when the Dashboard API is
+// unreachable. CC frequently spawns multiple notify-state processes in
+// parallel (e.g. step + activity back-to-back), and without serialization
+// the second write wins, losing the first mutation. The Dashboard server
+// doesn't need this — its mutations are single-threaded in-process — but
+// fallback writers do.
+//
+// Strategy: O_EXCL create a sibling lock file, retry for up to ~2s with
+// exponential backoff. Stale locks (owner process dead) are reclaimed by
+// mtime check — if the lock is older than STALE_LOCK_MS, steal it.
+const LOCK_RETRY_MS = 2000;
+const LOCK_BASE_DELAY = 25;
+const STALE_LOCK_MS = 10000;
+
+export async function withStateLock(stateFile, fn) {
+  const lockFile = stateFile + '.lock';
+  const dir = dirname(stateFile);
+  try { mkdirSync(dir, { recursive: true }); } catch {}
+
+  const acquire = () => {
+    try {
+      // O_EXCL: create exclusively. Throws EEXIST if already held.
+      const fd = openSync(lockFile, 'wx');
+      // Write our pid so a stuck lock can be attributed later (debugging).
+      try { writeFileSync(fd, String(process.pid)); } catch {}
+      try { closeSync(fd); } catch {}
+      return true;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      // Existing lock — check staleness.
+      try {
+        const st = statSync(lockFile);
+        if (Date.now() - st.mtimeMs > STALE_LOCK_MS) {
+          // Stale: unlink and retry. Best-effort; if unlink fails (race with
+          // another thief), the next attempt will see a fresh lock and wait.
+          try { unlinkSync(lockFile); } catch {}
+          return false;
+        }
+      } catch {}
+      return false;
+    }
+  };
+
+  const deadline = Date.now() + LOCK_RETRY_MS;
+  let delay = LOCK_BASE_DELAY;
+  let held = false;
+  while (Date.now() < deadline) {
+    if (acquire()) { held = true; break; }
+    await new Promise(r => setTimeout(r, delay));
+    delay = Math.min(delay * 2, 200);
+  }
+  if (!held) {
+    // Could not acquire — proceed without lock rather than block the workflow.
+    // Worst case is a lost mutation, same as the pre-lock behavior.
+    return fn();
+  }
+
+  try {
+    return fn();
+  } finally {
+    try { unlinkSync(lockFile); } catch {}
   }
 }
 

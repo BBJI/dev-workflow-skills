@@ -643,10 +643,28 @@ function scrollToQuestion() {
 }
 
 // ── Sound notification ──────────────────────────────
+// Reuse a single AudioContext — browsers cap the number of active contexts
+// (Chrome ~6), and creating one per play would silently stop producing sound
+// after the cap is hit. Lazy-init on first play (browsers require a user
+// gesture before audio can play; the toggle click provides that gesture).
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch { audioCtx = null; }
+  }
+  return audioCtx;
+}
+
 function playQuestionSound() {
   if (!soundEnabled) return;
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    // Browsers suspend AudioContext after creation until a user gesture;
+    // resume() is a no-op if already running.
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
@@ -858,14 +876,13 @@ function renderResultContent(result) {
 // part of the side panel that updates on every state change — rebuilding the
 // tracker tables each time is wasted work and resets hover/scroll state.
 let sidePanelStaticHash = '';
-let lastRenderedActivityLen = 0;
 
 function renderSidePanel(state) {
   const el = document.getElementById('panelSide');
 
   // Hash the static (non-activity-log) portion of the side panel state. If
   // unchanged since last render, we keep the existing tracker DOM and only
-  // update the activity log incrementally — see renderActivityLogIncremental.
+  // re-render the activity log.
   const staticSlice = {
     consensusTracker: state.consensusTracker,
     bugTracker: state.bugTracker,
@@ -876,8 +893,9 @@ function renderSidePanel(state) {
   if (staticChanged) {
     sidePanelStaticHash = staticHash;
     el.innerHTML = renderSidePanelStatic(state) + '<div class="activity-log"><h3>Activity Log</h3><div class="log-list" id="logList"></div></div>';
-    // Static panel rebuilt — log DOM is empty, reset incremental state
-    lastRenderedActivityLen = 0;
+    // Static panel rebuilt — expanded-log state is stale, clear it so future
+    // toggles don't point at the wrong entry.
+    expandedLogs.clear();
   }
 
   renderActivityLogIncremental(state.activityLog || []);
@@ -989,10 +1007,16 @@ function renderSidePanelStatic(state) {
   return html;
 }
 
-// Append-only activity log renderer. Avoids rebuilding all 50 log entries on
-// every state change — only newly-seen entries are DOM-appended, and the
-// oldest are pruned when the visible cap is exceeded. Preserves expand/collapse
-// state of existing entries because we never touch their DOM nodes.
+// Activity log renderer. Rebuilds the visible window (last 50 entries) on
+// every state change. A previous "incremental append" optimization was
+// removed because it broke once activityLog exceeded 50 entries: the sliced
+// length stalled at 50, so no new entries were ever appended and the UI
+// froze showing stale content. 50 entries is trivial to render, so the
+// optimization wasn't worth the complexity.
+//
+// Expand/collapse state is keyed by index within the visible window. After a
+// rebuild, panels reset to closed — expandedLogs is cleared to avoid stale
+// toggles pointing at the wrong entry.
 const ACTIVITY_LOG_VISIBLE_CAP = 50;
 
 function renderActivityLogIncremental(activityLog) {
@@ -1000,20 +1024,14 @@ function renderActivityLogIncremental(activityLog) {
   if (!logList) return;
 
   const logs = Array.isArray(activityLog) ? activityLog.slice(-ACTIVITY_LOG_VISIBLE_CAP) : [];
-  // If the source array shrank (e.g. state reset / re-init), rebuild from
-  // scratch — incremental append can't represent removals from the middle.
-  if (logs.length < lastRenderedActivityLen) {
-    logList.innerHTML = '';
-    lastRenderedActivityLen = 0;
-  }
 
-  // Append entries we haven't rendered yet. Each entry produces two DOM
-  // nodes (the row + its detail panel), so we batch via a DocumentFragment.
+  // Build the full list. Each entry produces two DOM nodes (row + detail panel).
   const frag = document.createDocumentFragment();
-  for (let i = lastRenderedActivityLen; i < logs.length; i++) {
+  for (let i = 0; i < logs.length; i++) {
     const entry = logs[i];
     const logKey = `log-${i}`;
     const isQA = entry.action === 'question-answered';
+    const isExpanded = expandedLogs.has(logKey);
     const wrapper = document.createElement('div');
     wrapper.innerHTML = `<div class="log-entry" onclick="toggleLog('${logKey}')">
       <span class="log-level ${entry.level || 'info'}"></span>
@@ -1021,20 +1039,14 @@ function renderActivityLogIncremental(activityLog) {
       <span class="log-phase">${isQA ? '💬' : entry.phase}</span>
       <span class="log-msg">${isQA ? '💬 ' : ''}${escHtml(entry.message)}</span>
     </div>
-    <div class="log-detail-panel" id="log-${logKey}">
+    <div class="log-detail-panel${isExpanded ? ' open' : ''}" id="log-${logKey}">
       <div class="log-detail-action">${escHtml(entry.action || '')} &middot; 阶段 ${entry.phase}</div>
       <div class="log-detail-msg">${escHtml(entry.message)}</div>
     </div>`;
     while (wrapper.firstChild) frag.appendChild(wrapper.firstChild);
   }
-  if (frag.childNodes.length > 0) logList.appendChild(frag);
-  lastRenderedActivityLen = logs.length;
-
-  // Prune oldest entries beyond the visible cap. Each entry occupies 2 nodes.
-  const maxNodes = ACTIVITY_LOG_VISIBLE_CAP * 2;
-  while (logList.childNodes.length > maxNodes) {
-    logList.removeChild(logList.firstChild);
-  }
+  logList.innerHTML = '';
+  logList.appendChild(frag);
 }
 
 function toggleTrackerRound(roundKey) {
@@ -1199,28 +1211,38 @@ function buildJsonCollapsible(key, value, depth, openBracket, closeBracket, coun
   const childrenDiv = document.createElement('div');
   childrenDiv.className = 'json-children' + (isExpanded ? '' : ' collapsed');
 
+  // Build children and append commas. buildJsonNode returns a DocumentFragment
+  // that may contain multiple rows (header + children + close). The comma
+  // belongs at the END of the fragment's last top-level node — i.e. the
+  // closing-bracket row for nested collapsibles, or the value row for
+  // primitives. We use cloneNode to flatten the fragment into a single
+  // wrapper span so we can reliably target its last .json-row.
+  const appendChildWithComma = (fragment, isLast) => {
+    // Flatten fragment into a wrapper so lastElementChild is reliable
+    const inner = document.createElement('span');
+    inner.appendChild(fragment);
+    if (!isLast) {
+      // Find the last row in the rendered node — for primitives this is the
+      // value row, for collapsibles it's the close-bracket row.
+      const rows = inner.querySelectorAll('.json-row');
+      const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
+      if (lastRow) {
+        const commaSpan = document.createElement('span');
+        commaSpan.textContent = ',';
+        lastRow.appendChild(commaSpan);
+      }
+    }
+    childrenDiv.appendChild(inner);
+  };
+
   if (Array.isArray(value)) {
     value.forEach((item, i) => {
-      childrenDiv.appendChild(buildJsonNode(item, depth + 1, i));
-      // Add comma
-      if (i < value.length - 1) {
-        const comma = document.createElement('span');
-        comma.textContent = ',';
-        childrenDiv.lastChild.querySelector('.json-row:last-child, .json-row')?.appendChild(comma);
-      }
+      appendChildWithComma(buildJsonNode(item, depth + 1, i), i === value.length - 1);
     });
   } else {
     const keys = Object.keys(value);
     keys.forEach((k, i) => {
-      childrenDiv.appendChild(buildJsonNode(value[k], depth + 1, k));
-      if (i < keys.length - 1) {
-        const lastRow = childrenDiv.lastElementChild;
-        if (lastRow) {
-          const commaSpan = document.createElement('span');
-          commaSpan.textContent = ',';
-          lastRow.appendChild(commaSpan);
-        }
-      }
+      appendChildWithComma(buildJsonNode(value[k], depth + 1, k), i === keys.length - 1);
     });
   }
   wrapper.appendChild(childrenDiv);

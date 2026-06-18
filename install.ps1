@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # ============================================
 # Dev Workflow Skills — PowerShell 一键安装脚本
 # 无需 clone，一条命令直接安装到 Claude Code 和 Codex
@@ -381,9 +381,10 @@ if ($Claude) {
 }
 
 # -------------------------------------------
-# 安装到 Codex
+# 安装到 Codex（函数定义，于脚本末尾调用，确保依赖的 Generate-AgentsMd
+# 在调用前已被定义——PowerShell 函数在定义语句执行后才注册到作用域）
 # -------------------------------------------
-if ($Codex) {
+function Install-Codex {
     Write-Host ""
     Write-Host "------------------------------------------------"
     Write-Host "为 Codex 生成 AGENTS.md..." -ForegroundColor Cyan
@@ -555,6 +556,13 @@ function Generate-AgentsMd {
 '@
     $agentsContent | Set-Content $Target -Encoding UTF8
     Write-Host "  [OK] AGENTS.md 已本地生成" -ForegroundColor Green
+}
+
+# -------------------------------------------
+# 执行 Codex 安装（在 Generate-AgentsMd 与 Install-Codex 函数都已定义后调用）
+# -------------------------------------------
+if ($Codex) {
+    Install-Codex
 }
 
 # -------------------------------------------

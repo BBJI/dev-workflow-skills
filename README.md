@@ -198,16 +198,29 @@ dev-workflow-skills/
 │   ├── dev-skill/
 │   │   └── SKILL.md
 │   ├── test-skill/
-│   │   └── SKILL.md
+│   │   ├── SKILL.md
+│   │   └── references/
 │   ├── instruction-skill/
 │   │   ├── SKILL.md
 │   │   └── references/
-│   └── workflow-skill/
-│       └── SKILL.md
+│   └── workflow-skill/          # 主编排器
+│       ├── SKILL.md
+│       ├── references/          # state-updates / dashboard / sub-skill-state-updates
+│       └── dashboard/           # Express + SSE 实时可视化服务器
+│           ├── server.mjs       # REST API + SSE 广播 + 文件监视
+│           ├── notify-state.mjs # 状态更新统一入口（API fallback 到原子文件写入）
+│           ├── dashboard-ask.mjs# 问答推送给用户 + SSE 等待回答
+│           ├── serve-preview.mjs# 启停被测项目的 dev/preview 服务器（测试用）
+│           ├── export-dashboard.mjs # 导出静态 HTML 留档
+│           ├── hooks/           # PreToolUse/PostToolUse hooks
+│           ├── lib/             # shared.mjs（共用工具）
+│           ├── public/          # 单文件前端（index.html，暗色主题）
+│           └── package.json     # express ^4.21.0, chokidar ^4.0.0
 ├── codex/
 │   └── AGENTS.md                # Codex 集成文件
 ├── install.sh                   # 一键安装脚本（macOS/Linux）
-└── install.ps1                  # 一键安装脚本（Windows）
+├── install.ps1                  # 一键安装脚本（Windows）
+└── README.md                    # 本文档
 ```
 
 ## 核心原则

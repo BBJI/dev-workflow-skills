@@ -208,8 +208,6 @@ description: >
 
 基于任务及其关联需求，创建测试计划。**优先使用阶段五产出的测试用例文档作为执行基准**，补充开发过程中发现的新场景：
 
-基于任务及其关联需求，创建测试计划：
-
 ```markdown
 ## TASK-xxx 测试计划
 
@@ -237,7 +235,7 @@ description: >
 
 定位 serve-preview 脚本（与 notify-state.mjs 同目录）：
 ```bash
-SKILL_DIR=$(find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname "$SKILL_DIR")
+SKILL_DIR=$(find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -not -path "*/.claude/skills/*" -print -quit 2>/dev/null || find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname "$SKILL_DIR")
 ```
 
 后台启动（脚本内部完成端口探测与健康检查，约 60s 内返回 status.json）：

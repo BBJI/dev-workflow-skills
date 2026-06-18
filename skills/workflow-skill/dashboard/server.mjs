@@ -385,7 +385,12 @@ app.post('/api/state/consensus', (req, res) => {
     return res.status(400).json({ success: false, error: 'Missing round' });
   }
   const updated = mutateState(state => {
-    state.overallStatus = 'consensus-loop';
+    // Guard: don't revert a terminal overallStatus (completed/failed). A late
+    // consensus update arriving after the workflow finished would otherwise
+    // rewind the dashboard into "consensus-loop" forever.
+    if (!['completed', 'failed'].includes(state.overallStatus)) {
+      state.overallStatus = 'consensus-loop';
+    }
     if (!state.consensusTracker) {
       state.consensusTracker = { rounds: [], currentRound: 0, maxRounds: 5, status: 'in-progress' };
     }
@@ -422,7 +427,12 @@ app.post('/api/state/bug', (req, res) => {
     return res.status(400).json({ success: false, error: 'Missing round' });
   }
   const updated = mutateState(state => {
-    state.overallStatus = 'tdd-loop';
+    // Guard: don't revert a terminal overallStatus (completed/failed). A late
+    // bug update arriving after the workflow finished would otherwise rewind
+    // the dashboard into "tdd-loop" forever.
+    if (!['completed', 'failed'].includes(state.overallStatus)) {
+      state.overallStatus = 'tdd-loop';
+    }
     if (!state.bugTracker) {
       state.bugTracker = { rounds: [], currentRound: 0, maxRounds: 3, status: 'in-progress' };
     }

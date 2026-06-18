@@ -16,7 +16,7 @@
 // latency and free death detection (connection closes when the dashboard
 // process dies) without polling the state file every 2s.
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'fs';
 import { join, resolve } from 'path';
 import { request } from 'http';
 import { parseArgs, toWinPath } from './lib/shared.mjs';
@@ -139,8 +139,9 @@ async function main() {
   // Step 1: Push question (skip if --listen-only)
   if (!listenOnly) {
     let pushCmd;
+    let tmpFile;
     if (args.questions) {
-      const tmpFile = join(projectRoot, '.dws', projectName, '.tmp', 'questions.json');
+      tmpFile = join(projectRoot, '.dws', projectName, '.tmp', 'questions.json');
       mkdirSync(join(projectRoot, '.dws', projectName, '.tmp'), { recursive: true });
       writeFileSync(tmpFile, args.questions, 'utf-8');
       pushCmd = `node "${notifyState}" --project-root "${projectRoot}" --project-name "${projectName}" --type question --questions @"${tmpFile}"`;
@@ -150,7 +151,7 @@ async function main() {
       const multiSelect = args['multi-select'] || 'false';
       const options = args.options || '[]';
 
-      const tmpFile = join(projectRoot, '.dws', projectName, '.tmp', 'question-opts.json');
+      tmpFile = join(projectRoot, '.dws', projectName, '.tmp', 'question-opts.json');
       mkdirSync(join(projectRoot, '.dws', projectName, '.tmp'), { recursive: true });
 
       const payload = { question, header, multiSelect: multiSelect === 'true', options: JSON.parse(options) };
@@ -165,8 +166,11 @@ async function main() {
       execSync(pushCmd, { stdio: 'pipe', timeout: 5000 });
     } catch (e) {
       console.error('Push failed:', e.message);
+      try { if (tmpFile) unlinkSync(tmpFile); } catch {}
       process.exit(1);
     }
+    // Clean up the temp payload — the question is now persisted in state.
+    try { if (tmpFile) unlinkSync(tmpFile); } catch {}
   }
 
   // Step 2: Wait for answer via SSE

@@ -255,10 +255,13 @@ function findPidOnPort(port) {
     child.stdout.on('data', (c) => { out += c.toString(); });
     child.on('error', () => resolve(null));
     child.on('close', () => {
+      // Word-boundary regex prevents :5173 from matching :51730. The port is
+      // followed by whitespace, end-of-line, or a non-digit (peer address).
+      const portRe = new RegExp('[:.]' + port + '(?!\\d)');
       const lines = out.split(/\r?\n/);
       for (const line of lines) {
         if (!/LISTENING|LISTEN/.test(line)) continue;
-        if (!line.includes(`:${port}`) && !line.includes(`:${port} `)) continue;
+        if (!portRe.test(line)) continue;
         // netstat: last column is pid; ss: pid/users column
         const m = line.match(/(\d+)\s*$/) || line.match(/pid=(\d+)/);
         if (m) {
