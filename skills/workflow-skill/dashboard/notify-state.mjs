@@ -283,8 +283,9 @@ function fallbackConsensus(stateFile, round, fatalIssues, highIssues, mediumIssu
 }
 
 // ── Fallback: bug tracker (phases 6-7) ─────────────
-// Mirrors server.mjs /api/state/bug logic.
-function fallbackBug(stateFile, round, newBugs, fixedBugs, remainingBugs, iterationId, details) {
+// Mirrors server.mjs /api/state/bug logic. Keep the convergence rules in
+// sync with the server handler — same priority order, same trend detection.
+function fallbackBug(stateFile, round, newBugs, fixedBugs, remainingBugs, iterationId, details, fatalBug, escalateReason) {
   const state = readStateFile(stateFile);
   if (!state) { console.error('State file not found:', stateFile); process.exit(1); }
 
@@ -292,7 +293,7 @@ function fallbackBug(stateFile, round, newBugs, fixedBugs, remainingBugs, iterat
     state.overallStatus = 'tdd-loop';
   }
   if (!state.bugTracker) {
-    state.bugTracker = { rounds: [], currentRound: 0, maxRounds: 3, status: 'in-progress' };
+    state.bugTracker = { rounds: [], currentRound: 0, maxRounds: 3, status: 'in-progress', escalationReason: null };
   }
   state.bugTracker.currentRound = round;
   if (!Array.isArray(state.bugTracker.rounds)) state.bugTracker.rounds = [];
@@ -304,20 +305,47 @@ function fallbackBug(stateFile, round, newBugs, fixedBugs, remainingBugs, iterat
     iterationId: iterationId || null,
     details: details || null,
   });
+  const rounds = state.bugTracker.rounds;
+  const maxRounds = state.bugTracker.maxRounds || 3;
+  let status;
+  let reason = null;
   if (remainingBugs === 0) {
-    state.bugTracker.status = 'stable';
+    status = 'stable';
     if (!['completed', 'failed'].includes(state.overallStatus)) state.overallStatus = 'in-progress';
-  } else if (round >= 3 && remainingBugs > 0) {
-    state.bugTracker.status = 'escalated';
+  } else if (fatalBug || escalateReason) {
+    status = 'escalated';
+    reason = escalateReason || 'fatal-bug';
+  } else if (rounds.length >= 2) {
+    const prev = rounds[rounds.length - 2].newBugs || 0;
+    const curr = rounds[rounds.length - 1].newBugs || 0;
+    if (prev > 0 && curr >= prev) {
+      status = 'escalated';
+      reason = `trend-not-converging (newBugs ${prev}→${curr})`;
+    } else if (round >= maxRounds && remainingBugs > 0) {
+      status = 'escalated';
+      reason = `max-rounds (${maxRounds}) exhausted`;
+    } else {
+      status = 'converging';
+    }
+  } else if (round >= maxRounds && remainingBugs > 0) {
+    status = 'escalated';
+    reason = `max-rounds (${maxRounds}) exhausted`;
   } else {
-    state.bugTracker.status = 'converging';
+    status = 'converging';
   }
-  const level = remainingBugs === 0 ? 'success' : newBugs > 0 ? 'error' : 'info';
-  pushActivity(state, 7, 'test-round', `第${round}轮: ${newBugs}新Bug, ${fixedBugs}已修复, ${remainingBugs}剩余`, level);
+  state.bugTracker.status = status;
+  state.bugTracker.escalationReason = reason;
+  const level = status === 'stable' ? 'success'
+    : status === 'escalated' ? 'error'
+    : (newBugs > 0 ? 'error' : 'info');
+  const msg = reason
+    ? `第${round}轮: ${newBugs}新Bug, ${fixedBugs}已修复, ${remainingBugs}剩余 → ${status} (${reason})`
+    : `第${round}轮: ${newBugs}新Bug, ${fixedBugs}已修复, ${remainingBugs}剩余 → ${status}`;
+  pushActivity(state, 7, 'test-round', msg, level);
 
   state.updatedAt = new Date().toISOString();
   writeStateFileAtomic(stateFile, state);
-  console.log(`OK bug round ${round} (remaining=${remainingBugs})`);
+  console.log(`OK bug round ${round} (remaining=${remainingBugs}, status=${status})`);
 }
 
 // ── Resolve value (inline JSON, @file, or plain string) ────
@@ -351,7 +379,7 @@ async function main() {
     console.error('  --type overall       [--current-phase N] [--overall-status ...] [--current-iteration N] [--total-iterations N]');
     console.error('  --type activity      --phase N --action xxx --message xxx [--level info|success|warning|error]');
     console.error('  --type consensus     --round N --fatal-issues X --high-issues Y [--medium-issues Z] [--low-issues W] --status consensus-not-reached|consensus-reached [--req-adjustments A] [--design-adjustments B] [--details JSON]');
-    console.error('  --type bug           --round N --new-bugs X --fixed-bugs Y --remaining-bugs Z [--iteration-id ...] [--details JSON]');
+    console.error('  --type bug           --round N --new-bugs X --fixed-bugs Y --remaining-bugs Z [--iteration-id ...] [--fatal-bug true] [--escalate-reason "..."] [--details JSON]');
     console.error('  --type init          --state-json \'{"projectName":...}\'  or --state-json @path/to/file.json');
     console.error('  --type dashboard-url --url http://localhost:PORT');
     console.error('  --type question      --question "text" --header "title" [--multi-select false] --options \'[{"value":"v1","label":"L1"}]\' or --options @path/to/file.json');
@@ -436,6 +464,8 @@ async function main() {
           remainingBugs: parseInt(args['remaining-bugs'] || '0', 10),
         };
         if (args['iteration-id'] !== undefined) body.iterationId = args['iteration-id'];
+        if (args['fatal-bug'] !== undefined) body.fatalBug = args['fatal-bug'] === true || args['fatal-bug'] === 'true';
+        if (args['escalate-reason'] !== undefined) body.escalateReason = args['escalate-reason'];
         if (args.details) {
           try { body.details = JSON.parse(resolveJsonOrFile(args.details)); } catch {
             console.error('Invalid --details JSON'); process.exit(1);
@@ -549,7 +579,9 @@ async function main() {
           parseInt(args['fixed-bugs'] || '0', 10),
           parseInt(args['remaining-bugs'] || '0', 10),
           args['iteration-id'],
-          details
+          details,
+          args['fatal-bug'] === true || args['fatal-bug'] === 'true',
+          args['escalate-reason']
         );
       } catch {
         console.error('Invalid --details JSON'); process.exit(1);

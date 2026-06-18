@@ -76,8 +76,52 @@ node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --pr
   --details '{"summary":"本轮测试概述","items":["Bug1: 描述","Bug2: 描述"],"metrics":{"通过率":"92%"}}'
 ```
 
-- remaining-bugs 为 0 时 API 自动设置 stable 状态
-- 连续 3 轮不收敛时 API 自动设置 escalated
+**致命级强制升级**（dev server 启动失败等阻塞全流程的缺陷）：
+```bash
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type bug --round 1 --new-bugs 1 --fixed-bugs 0 --remaining-bugs 1 \
+  --fatal-bug true --escalate-reason "dev server 启动失败: 端口探测超时" \
+  --details '{"summary":"应用无法启动","items":["log.txt 显示 Module not found"],"metrics":{"启动耗时":"60s"}}'
+```
+
+### bugTracker 状态机
+
+`workflow-state.json` 中的 `bugTracker` 结构：
+```json
+{
+  "rounds": [
+    { "round": 1, "newBugs": 8, "fixedBugs": 0, "remainingBugs": 8, "iterationId": "iter-1", "details": {...} },
+    { "round": 2, "newBugs": 3, "fixedBugs": 6, "remainingBugs": 5, "iterationId": "iter-1", "details": {...} }
+  ],
+  "currentRound": 2,
+  "maxRounds": 3,
+  "status": "converging",
+  "escalationReason": null
+}
+```
+
+**状态转移规则**（按优先级，命中即停止判断）：
+
+| 优先级 | 条件 | 新状态 | escalationReason |
+|--------|------|--------|------------------|
+| 1 | `remainingBugs === 0` | `stable` | null |
+| 2 | `fatalBug=true` 或 `escalateReason` 提供 | `escalated` | 传入的 reason 或 `fatal-bug` |
+| 3 | 最近 2 轮 `newBugs` 不递减（均 > 0） | `escalated` | `trend-not-converging (newBugs X→Y)` |
+| 4 | `round >= maxRounds(3)` 且 `remainingBugs > 0` | `escalated` | `max-rounds (3) exhausted` |
+| 5 | 其他 | `converging` | null |
+
+**为什么有趋势检测（规则 3）**：原始规则只看 `maxRounds`，但 Bug 列表 `[8] → [10] → [12]` 这种"越修越多"的情况要等到第 3 轮才升级，白白浪费 2 轮循环。趋势检测在第 2 轮就能识别不收敛，提前升级。
+
+**升级后的处理**：状态机只负责记录 `escalated` 状态，**不自动暂停工作流**。workflow-skill 编排器在调用 bug API 后必须检查 `state.bugTracker.status`：
+
+- `stable` → 迭代收敛，进入下一迭代或工作流完成
+- `converging` → 继续 Bug 修复循环
+- `escalated` → **暂停 TDD 闭环**，向用户升级：
+  ```bash
+  node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+    --type activity --phase 7 --action tdd-loop-escalated --message "TDD 闭环升级: {escalationReason} — 暂停等待用户决策" --level error
+  ```
+  然后用 AskUserQuestion 询问用户：继续修复 / 调整设计 / 回退到需求评审。**不要继续跑同样的闭环期待不同结果**。
 
 ## 工作流完成
 

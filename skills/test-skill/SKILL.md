@@ -528,11 +528,19 @@ node "$SKILL_DIR/dashboard/serve-preview.mjs" stop \
 测试验证模式优先用 Playwright MCP 自动执行；以下情况降级，并按"需人工补测项"格式在总结报告中说明：
 
 1. **Playwright MCP 不可用**（环境未注册 `mcp__plugin_playwright_playwright__*` 工具）→ 跳过步骤 1.5 与步骤二~四的自动化部分，回到原始手动验证清单模式，总结报告顶部标注"环境未提供 Playwright MCP，本次为手动验证清单"。
-2. **dev server 启动失败**（serve-preview 超时或返回 `ok: false`）→ 受影响 TC 标"阻塞"，原因写入 Bug 报告。视觉/响应式若可静态分析（如直接读 CSS 文件）尽量继续；其余列入"需人工补测项"。
+2. **dev server 启动失败**（serve-preview 超时或返回 `ok: false`）→ **这是致命级 Bug，不可降级放过**。处理流程：
+   - 读取 `.dws/{项目名}/test/.serve/log.txt` 定位根因
+   - 生成一份 `BUG-xxx` 报告，严重程度=**致命**，优先级=**P0**，包含完整启动日志摘要和根因分析
+   - 在测试总结报告中将整体评估标为"**不通过**"，并在"发现的 Bug"表格置顶该致命 Bug
+   - **强制回流 dev**：测试验证阶段不在此处继续，立即把 Bug 报告送回 dev-skill 步骤六修复。修复后重跑本阶段。
+   - **不允许降级到静态分析就声明通过**。应用根本起不来 = 主工作流完全不可用，没有"有条件通过"的余地。
+   - 视觉/响应式等纯静态维度可在 Bug 报告中标注"待 dev server 修复后补测"，但不计入通过用例数。
 3. **单个 TC 自动化失败**（如 axe-core CDN 不可达、元素选择器不匹配）→ 该 TC 标"阻塞"并降级到最小手动清单，其余 TC 不受影响。
 4. **MCP 工具异常**（如 browser_navigate 超时）→ 重试 1 次；仍失败则该 TC 标"阻塞"，记入"需人工补测项"。
 
 降级原则：**能自动化的不留给用户**。只有真正无法在 MCP 内完成的（真实屏幕阅读器、真实网络性能、服务端行为、物理设备触控）才进入"需人工补测项"。
+
+**例外**：dev server 启动失败（情况 2）不属于"可降级"范畴——它是阻塞全流程的致命缺陷，必须修复后才能继续。这条规则是为了堵住"应用起不来却被降级放过、最终交付一个根本跑不通的产品"的口子。
 
 ## 模式判断
 
@@ -619,4 +627,10 @@ node "$SKILL_DIR/dashboard/serve-preview.mjs" stop \
 ```bash
 node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
   --type activity --phase 7 --action bugs-found --message "发现 X 个Bug（Y致命/Z高）" --level warning
+```
+
+**dev server 启动失败时（致命级）**：用 error 级别广播并强制回流 dev：
+```bash
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type activity --phase 7 --action dev-server-failed --message "dev server 启动失败 - 强制回流 dev 修复: [根因摘要]" --level error
 ```

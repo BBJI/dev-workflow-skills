@@ -421,8 +421,19 @@ app.post('/api/state/consensus', (req, res) => {
 });
 
 // Update bug tracker (phases 6-7)
+//
+// Convergence state machine (mirrored in notify-state.mjs fallbackBug):
+//   remainingBugs === 0                         → 'stable'      (iteration converged)
+//   fatalBug=true OR escalateReason provided    → 'escalated'   (force-escalate, e.g. dev server failed)
+//   trend: last 2 rounds newBugs non-decreasing → 'escalated'   (not converging — escalate early)
+//   round >= maxRounds (3) && remainingBugs > 0 → 'escalated'   (max rounds exhausted)
+//   otherwise                                   → 'converging'
+//
+// 'escalated' means: pause the TDD loop, surface to user with diagnostics.
+// The workflow-skill orchestrator is responsible for actually halting —
+// this API just records the state.
 app.post('/api/state/bug', (req, res) => {
-  const { round, newBugs, fixedBugs, remainingBugs, iterationId, details } = req.body;
+  const { round, newBugs, fixedBugs, remainingBugs, iterationId, details, fatalBug, escalateReason } = req.body;
   if (round === undefined) {
     return res.status(400).json({ success: false, error: 'Missing round' });
   }
@@ -434,7 +445,7 @@ app.post('/api/state/bug', (req, res) => {
       state.overallStatus = 'tdd-loop';
     }
     if (!state.bugTracker) {
-      state.bugTracker = { rounds: [], currentRound: 0, maxRounds: 3, status: 'in-progress' };
+      state.bugTracker = { rounds: [], currentRound: 0, maxRounds: 3, status: 'in-progress', escalationReason: null };
     }
     state.bugTracker.currentRound = round;
     if (!Array.isArray(state.bugTracker.rounds)) state.bugTracker.rounds = [];
@@ -446,16 +457,48 @@ app.post('/api/state/bug', (req, res) => {
       iterationId: iterationId || null,
       details: details || null
     });
+    // Determine convergence status using priority rules.
+    const rounds = state.bugTracker.rounds;
+    const maxRounds = state.bugTracker.maxRounds || 3;
+    let status;
+    let reason = null;
     if (remainingBugs === 0) {
-      state.bugTracker.status = 'stable';
-      state.overallStatus = 'in-progress';
-    } else if (round >= 3 && remainingBugs > 0) {
-      state.bugTracker.status = 'escalated';
+      status = 'stable';
+    } else if (fatalBug || escalateReason) {
+      // Force-escalate: dev server failed to start, or orchestrator-flagged fatal issue.
+      // These block the entire main workflow — no point cycling through fix rounds.
+      status = 'escalated';
+      reason = escalateReason || 'fatal-bug';
+    } else if (rounds.length >= 2) {
+      // Trend detection: if newBugs is non-decreasing across the last 2 rounds
+      // (both > 0), the loop is not converging. Escalate before hitting maxRounds
+      // to avoid wasting cycles on a fundamentally broken area.
+      const prev = rounds[rounds.length - 2].newBugs || 0;
+      const curr = rounds[rounds.length - 1].newBugs || 0;
+      if (prev > 0 && curr >= prev) {
+        status = 'escalated';
+        reason = `trend-not-converging (newBugs ${prev}→${curr})`;
+      } else if (round >= maxRounds && remainingBugs > 0) {
+        status = 'escalated';
+        reason = `max-rounds (${maxRounds}) exhausted`;
+      } else {
+        status = 'converging';
+      }
+    } else if (round >= maxRounds && remainingBugs > 0) {
+      status = 'escalated';
+      reason = `max-rounds (${maxRounds}) exhausted`;
     } else {
-      state.bugTracker.status = 'converging';
+      status = 'converging';
     }
-    const level = remainingBugs === 0 ? 'success' : newBugs > 0 ? 'error' : 'info';
-    pushActivity(state, 7, 'test-round', `第${round}轮: ${newBugs}新Bug, ${fixedBugs}已修复, ${remainingBugs}剩余`, level);
+    state.bugTracker.status = status;
+    state.bugTracker.escalationReason = reason;
+    const level = status === 'stable' ? 'success'
+      : status === 'escalated' ? 'error'
+      : (newBugs > 0 ? 'error' : 'info');
+    const msg = reason
+      ? `第${round}轮: ${newBugs}新Bug, ${fixedBugs}已修复, ${remainingBugs}剩余 → ${status} (${reason})`
+      : `第${round}轮: ${newBugs}新Bug, ${fixedBugs}已修复, ${remainingBugs}剩余 → ${status}`;
+    pushActivity(state, 7, 'test-round', msg, level);
   });
   if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
   res.json({ success: true });
