@@ -227,9 +227,51 @@ description: >
 | TC-004 | 响应式 | [描述] | P1 | NFR-003 |
 ```
 
+### 步骤 1.5：自动化浏览器环境准备
+
+**目的**：把"待手动验证清单"变成 skill 自驱的自动化验证。当 Playwright MCP 工具在当前环境可用时，所有可在浏览器内执行的用例由 skill 主动驱动，用户全程无需介入。
+
+**前置判断**：检查当前会话是否注册了 `mcp__plugin_playwright_playwright__browser_navigate` 等工具。若未注册，跳过本节及步骤二~四的自动化部分，按"降级策略"执行。
+
+**启动被测应用**：
+
+定位 serve-preview 脚本（与 notify-state.mjs 同目录）：
+```bash
+SKILL_DIR=$(find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname "$SKILL_DIR")
+```
+
+后台启动（脚本内部完成端口探测与健康检查，约 60s 内返回 status.json）：
+```bash
+node "$SKILL_DIR/dashboard/serve-preview.mjs" start \
+  --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --timeout 60
+```
+
+轮询状态直到拿到 `url`（或失败）：
+```bash
+node "$SKILL_DIR/dashboard/serve-preview.mjs" status \
+  --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME"
+```
+
+成功时 status.json 形如 `{ ok: true, pid, port, url, script, logFile }`。后续步骤使用 `url` 作为被测地址。
+
+**打开浏览器并自检**：
+1. `mcp__plugin_playwright_playwright__browser_navigate` → 打开 `url`
+2. `mcp__plugin_playwright_playwright__browser_console_messages` (level=error) → 记录启动期致命错误作为基线
+3. `mcp__plugin_playwright_playwright__browser_snapshot` → 确认页面已渲染（无空白/404）
+
+**广播活动到 Dashboard**（仅 workflow 编排下）：
+```bash
+node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
+  --type activity --phase 7 --action browser-env-ready \
+  --message "浏览器自动化环境就绪：$URL" --level info
+```
+
+**失败处理**：若 serve-preview 启动失败或 Playwright 不可达，按"降级策略"执行，不阻断后续静态分析类用例。
+
 ### 步骤二：功能测试
 
-系统地测试每个验收标准：
+系统地测试每个验收标准。**当步骤 1.5 成功时，本步骤由 Playwright MCP 自动执行**：
 
 **对每条FR（功能需求）：**
 - 测试正常路径：给定前置条件，执行操作，预期结果是否出现？
@@ -243,14 +285,41 @@ description: >
 
 **需求**：FR-xxx
 **优先级**：P0
+**自动化**：是（Playwright MCP） / 否（降级）
 **前置条件**：[测试前必须为真的条件]
 **步骤**：
 1. [操作]
 2. [操作]
 3. [操作]
 **预期结果**：[应该发生什么]
-**实际结果**：[实际发生了什么——测试时填写]
+**实际结果**：[由 Playwright 实测填入——断言返回值、snapshot 节点、控制台输出]
 **状态**：通过 / 失败 / 阻塞
+**证据**：[截图路径、控制台错误、断言表达式]
+```
+
+**Playwright MCP 执行模式（每个 TC）**：
+1. `browser_navigate` 到目标页面（若尚未在该页）
+2. 用 `browser_click` / `browser_type` / `browser_select_option` / `browser_press_key` 按步骤模拟用户操作
+3. 用 `browser_snapshot`（无障碍树）或 `browser_evaluate`（执行断言表达式返回布尔/值）取实际结果
+4. 用 `browser_console_messages(level=error)` 捕获 JS 错误作为证据
+5. 失败用例调 `browser_take_screenshot` 存证到 `.dws/{项目名}/test/screenshots/TC-xxx-fail.png`
+6. **状态由断言结果决定**：通过 = 所有断言返回 true 且无致命控制台错误；失败 = 断言返回 false 或出现错误；阻塞 = 元素不可达/工具异常
+
+**断言示例**（`browser_evaluate` 的 `function` 参数）：
+```js
+// 验证提交后出现成功提示
+() => {
+  const toast = document.querySelector('[data-testid="success-toast"]');
+  return toast !== null && toast.textContent.includes('保存成功');
+}
+```
+
+```js
+// 验证空必填字段提交时显示校验错误
+() => {
+  const err = document.querySelector('#email-error');
+  return err && getComputedStyle(err).display !== 'none';
+}
 ```
 
 **每功能测试检查清单：**
@@ -267,50 +336,92 @@ description: >
 
 ### 步骤三：非功能测试
 
-**性能测试：**
-- 页面加载时间满足NFR目标（用DevTools/Lighthouse测量）
-- API响应时间在指定阈值内
-- 长时间使用无内存泄漏（堆快照检查）
-- 大数据集不导致UI卡顿或崩溃
+**当步骤 1.5 成功时，以下子项由 Playwright MCP 自动执行。** 每项失败时调 `browser_take_screenshot` 存证。
+
+**性能测试（`browser_evaluate` 读 Navigation Timing API）：**
+```js
+() => {
+  const [nav] = performance.getEntriesByType('navigation');
+  if (!nav) return { ok: false, reason: 'no navigation entry' };
+  const fcp = performance.getEntriesByName('first-contentful-paint')[0];
+  return {
+    ttfb: Math.round(nav.responseStart - nav.requestStart),
+    domContentLoaded: Math.round(nav.domContentLoadedEventEnd - nav.startTime),
+    load: Math.round(nav.loadEventEnd - nav.startTime),
+    fcp: fcp ? Math.round(fcp.startTime) : null,
+  };
+}
+```
+对照 NFR 阈值断言（如 FCP < 1500ms，LCP < 2500ms）。Lighthouse 不可在 MCP 内运行，仅做基础性能采集；如需 Lighthouse 分数，列入"需人工补测项"。
 
 **无障碍测试：**
-- [ ] 键盘导航：Tab顺序遵循视觉流，所有交互元素可达
-- [ ] 焦点指示器在所有交互元素上可见
-- [ ] 屏幕阅读器正确播报页面结构（标题、地标）
-- [ ] 表单标签与输入框关联，错误信息通过aria-describedby关联
-- [ ] 颜色不是状态的唯一指示器
-- [ ] 触控目标满足最小尺寸（移动端44x44px，桌面端24x24px）
-- [ ] 文本满足对比度比率（正文4.5:1，大字3:1）
-- [ ] 动画尊重prefers-reduced-motion
-- [ ] 模态框锁定焦点，关闭时返回焦点
-- [ ] 动态内容更新被屏幕阅读器播报
+- **axe-core 自动扫描**（首选）：`browser_evaluate` 注入 axe-core 并运行：
+  ```js
+  async () => {
+    if (!window.axe) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://unpkg.com/axe-core@4/axe.min.js';
+        s.onload = resolve; s.onerror = () => reject(new Error('axe-core load failed'));
+        document.head.appendChild(s);
+      });
+    }
+    const results = await window.axe.run(document, {
+      runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa'] },
+    });
+    return { violations: results.violations.map(v => ({ id: v.id, impact: v.impact, count: v.nodes.length })) };
+  }
+  ```
+  axe-core CDN 不可达时，降级为基本检查（见下）。
+- **基本检查（降级）**：用 `browser_press_key` 连续 Tab，每次后 `browser_snapshot` 记录 focus 节点，验证 Tab 顺序遵循视觉流且无键盘陷阱；用 `browser_evaluate` 检查 `[aria-describedby]` 关联、`prefers-reduced-motion` 媒体查询、颜色对比（取前景/背景计算亮度比）。
+- **真实屏幕阅读器播报**无法在 MCP 内验证 → 列入"需人工补测项"。
 
-**响应式测试：**
-- 在所有指定断点测试（移动端、平板、桌面端）
-- 验证布局按设计适配——无水平溢出、无截断内容
-- 移动端触控目标尺寸适当
-- 移动端导航工作（汉堡菜单、滑动手势）
-- 移动端表单可用（适当的输入类型、不小字）
+**响应式测试（`browser_resize` + 断言）：**
+- `browser_resize` 到 375×667 / 768×1024 / 1440×900
+- 每个视口下 `browser_evaluate` 检测水平溢出：
+  ```js
+  () => ({
+    horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    innerWidth: window.innerWidth,
+  })
+  ```
+- `browser_take_screenshot` 留证每个视口
+- 移动端触控目标用 `browser_evaluate` 检查所有 `button/a[role=button]` 的 `getBoundingClientRect()` ≥ 44×44
 
-**安全测试：**
-- [ ] XSS：输入被正确转义，无法注入脚本
-- [ ] CSRF：状态变更操作有CSRF保护
-- [ ] 认证：受保护路由重定向到登录；未授权操作返回403
-- [ ] 数据暴露：API响应不泄露敏感数据
-- [ ] 输入校验：存在服务端校验（不仅仅是客户端）
+**安全测试（`browser_evaluate` + `browser_navigate`）：**
+- XSS：在输入框 `browser_type` 注入 `<img src=x onerror=window.__xss=true>`，提交后 `browser_evaluate` 验证 `window.__xss` 仍为 undefined（即被转义）
+- 认证：`browser_navigate` 到受保护路由，`browser_snapshot` 验证重定向到登录页
+- CSRF / 服务端校验：需服务端配合，无法纯前端验证 → 列入"需人工补测项"
 
 ### 步骤四：视觉/设计一致性测试
 
-将实现与设计规范对比：
+**当步骤 1.5 成功时，由 Playwright MCP 自动执行。** 用 `browser_evaluate` 读 `getComputedStyle()` 拿实际值，与设计令牌（来自 design-skill 产物或 CSS 自定义属性）逐项比对：
 
-- [ ] 颜色匹配设计令牌（用浏览器DevTools验证）
-- [ ] 排版匹配规格（字体族、大小、字重、行高）
-- [ ] 间距匹配规格（内边距、外边距、间隙）
-- [ ] 组件状态匹配规格（悬停、聚焦、激活、禁用、加载、错误）
-- [ ] 布局匹配规格（网格、对齐、比例）
-- [ ] 图标和图片匹配规格
-- [ ] 动画匹配规格（时长、缓动、行为）
-- [ ] 深色模式/主题变体按规格工作
+```js
+// 示例：验证主按钮颜色匹配 --color-primary 令牌
+(selector) => {
+  const el = document.querySelector(selector);
+  if (!el) return { ok: false, reason: 'not found' };
+  const cs = getComputedStyle(el);
+  const token = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim();
+  return {
+    actual: cs.backgroundColor,
+    token,
+    match: cs.backgroundColor === token || cs.color === token,
+    fontFamily: cs.fontFamily,
+    fontSize: cs.fontSize,
+    padding: cs.padding,
+    borderRadius: cs.borderRadius,
+  };
+}
+```
+
+- 颜色 / 排版（字体族、字号、字重、行高）/ 间距（padding、margin、gap）/ 圆角 → 用上述模式批量取值
+- 组件状态：用 `browser_hover` 触发悬停、`browser_evaluate` 设置 `:focus-visible` / `:disabled`，再取 `getComputedStyle`
+- 布局：`browser_evaluate` 读 `getBoundingClientRect()` 比对网格列宽、对齐
+- 深色模式：`browser_evaluate` 切换 `document.documentElement.dataset.theme = 'dark'`，重取样式
+- `browser_take_screenshot` 留证关键视图
 
 注意：轻微的像素级差异可接受。只标记有意义的视觉偏差。
 
@@ -374,21 +485,33 @@ Bug修复后验证：
 ```markdown
 ## 测试总结 — TASK-xxx
 
+### 自动化执行情况
+- Playwright MCP：可用 / 不可用
+- 被测应用：$URL（pid $PID，script $SCRIPT）
+- 自动化用例占比：X / Y
+
 ### 结果
-| 类别 | 总数 | 通过 | 失败 | 阻塞 |
-|------|------|------|------|------|
-| 功能 | X | X | X | X |
-| 非功能 | X | X | X | X |
-| 无障碍 | X | X | X | X |
-| 视觉/设计 | X | X | X | X |
-| 回归 | X | X | X | X |
-| **合计** | **X** | **X** | **X** | **X** |
+| 类别 | 总数 | 通过 | 失败 | 阻塞 | 自动化 |
+|------|------|------|------|------|--------|
+| 功能 | X | X | X | X | X |
+| 非功能 | X | X | X | X | X |
+| 无障碍 | X | X | X | X | X |
+| 视觉/设计 | X | X | X | X | X |
+| 回归 | X | X | X | X | X |
+| **合计** | **X** | **X** | **X** | **X** | **X** |
 
 ### 发现的Bug
 | Bug ID | 严重程度 | 描述 | 状态 |
 |--------|---------|------|------|
 | BUG-001 | 高 | [简要描述] | 待修 |
 | BUG-002 | 中 | [简要描述] | 待修 |
+
+### 需人工补测项（仅当降级策略触发时出现）
+| TC ID | 维度 | 降级原因 | 最小操作步骤 |
+|-------|------|----------|--------------|
+| TC-A11Y-007 | 无障碍 | 真实屏幕阅读器播报无法在 MCP 内验证 | 用 NVDA 打开 /settings，确认标题播报顺序 |
+
+> 若所有用例均由 Playwright 自动执行完毕，本区块留空，不输出"待手动验证清单"。
 
 ### 整体评估
 通过 / 有条件通过 / 不通过
@@ -400,6 +523,23 @@ Bug修复后验证：
 ### 建议
 [接下来应做什么——修复Bug、重新测试、批准]
 ```
+
+**测试结束后清理**：调用 `serve-preview.mjs stop` 关闭被测应用：
+```bash
+node "$SKILL_DIR/dashboard/serve-preview.mjs" stop \
+  --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME"
+```
+
+## 降级策略
+
+测试验证模式优先用 Playwright MCP 自动执行；以下情况降级，并按"需人工补测项"格式在总结报告中说明：
+
+1. **Playwright MCP 不可用**（环境未注册 `mcp__plugin_playwright_playwright__*` 工具）→ 跳过步骤 1.5 与步骤二~四的自动化部分，回到原始手动验证清单模式，总结报告顶部标注"环境未提供 Playwright MCP，本次为手动验证清单"。
+2. **dev server 启动失败**（serve-preview 超时或返回 `ok: false`）→ 受影响 TC 标"阻塞"，原因写入 Bug 报告。视觉/响应式若可静态分析（如直接读 CSS 文件）尽量继续；其余列入"需人工补测项"。
+3. **单个 TC 自动化失败**（如 axe-core CDN 不可达、元素选择器不匹配）→ 该 TC 标"阻塞"并降级到最小手动清单，其余 TC 不受影响。
+4. **MCP 工具异常**（如 browser_navigate 超时）→ 重试 1 次；仍失败则该 TC 标"阻塞"，记入"需人工补测项"。
+
+降级原则：**能自动化的不留给用户**。只有真正无法在 MCP 内完成的（真实屏幕阅读器、真实网络性能、服务端行为、物理设备触控）才进入"需人工补测项"。
 
 ## 模式判断
 
@@ -466,12 +606,15 @@ Bug修复后验证：
 | 步骤 | 状态文件步骤 ID |
 |------|----------------|
 | 步骤一：测试计划 | `test-verify-step-1` |
+| 步骤 1.5：自动化浏览器环境准备 | （仅广播活动，不建 step） |
 | 步骤二：功能测试 | `test-verify-step-2` |
 | 步骤三：非功能测试 | `test-verify-step-3` |
 | 步骤四：视觉/设计一致性测试 | `test-verify-step-4` |
 | 步骤五：回归测试 | `test-verify-step-5` |
 | 步骤六：Bug报告 | `test-verify-step-6` |
 | 步骤七：测试总结报告 | `test-verify-step-7` |
+
+> 步骤 1.5 不修改状态机 schema，通过 `--type activity --action browser-env-ready` 广播；步骤二的 `--detail` 字段可记录"自动化用例 X/Y"。
 
 ### 更新规则
 
