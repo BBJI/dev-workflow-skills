@@ -2,9 +2,50 @@
 // notify-state.mjs — Helper script for CC to update workflow state via Dashboard API
 // Falls back to direct file write when Dashboard is not running
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'fs';
-import { join, resolve } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, readdirSync, statSync } from 'fs';
+import { join, resolve, dirname, basename, relative } from 'path';
 import { request } from 'http';
+
+// ── Phase → artifact directory mapping ─────────────
+// When a phase is marked completed, its artifact subdirectory under
+// .dws/{project}/ is auto-scanned and files are registered into phase.artifacts.
+// Phase 5 and 7 both write to test/ — pattern distinguishes write-mode vs verify-mode outputs.
+const PHASE_ARTIFACT_DIRS = {
+  0: { dir: 'instruct' },
+  1: { dir: 'req' },
+  2: { dir: 'design' },
+  3: { dir: 'review' },
+  4: { dir: 'task' },
+  5: { dir: 'test', pattern: /^test-cases\.md$/ },
+  6: { dir: 'dev' },
+  7: { dir: 'test', pattern: /^(test-plan|test-summary|verification-report|bug-report-.*)\.md$/ },
+};
+
+function scanPhaseArtifacts(projectRoot, projectName, phaseId) {
+  const config = PHASE_ARTIFACT_DIRS[phaseId];
+  if (!config) return [];
+  const dwsDir = join(projectRoot, '.dws', projectName);
+  const dir = join(dwsDir, config.dir);
+  if (!existsSync(dir)) return [];
+  const out = [];
+  const walk = (d) => {
+    for (const name of readdirSync(d)) {
+      const full = join(d, name);
+      let st;
+      try { st = statSync(full); } catch { continue; }
+      if (st.isDirectory()) {
+        if (name === '.serve' || name === 'screenshots' || name === '.tmp') continue;
+        walk(full);
+      } else {
+        if (config.pattern && !config.pattern.test(name)) continue;
+        const rel = relative(dwsDir, full).replace(/\\/g, '/');
+        out.push({ path: rel, name });
+      }
+    }
+  };
+  walk(dir);
+  return out;
+}
 
 // ── Git Bash path conversion (Windows) ──────────────
 function toWinPath(p) {
@@ -120,9 +161,19 @@ function parseId(val) {
   return Number.isNaN(n) ? val : n;
 }
 
+function isDefaultPhaseName(name, phaseId) {
+  return !name || name === `阶段 ${phaseId}`;
+}
+
 function ensurePhase(state, phaseId, name) {
   if (!Array.isArray(state.phases)) state.phases = [];
-  if (state.phases.find(p => p.id === phaseId)) return;
+  const existing = state.phases.find(p => p.id === phaseId);
+  if (existing) {
+    if (name && isDefaultPhaseName(existing.name, phaseId)) {
+      existing.name = name;
+    }
+    return;
+  }
   state.phases.push({
     id: phaseId,
     name: name || `阶段 ${phaseId}`,
@@ -141,7 +192,13 @@ function ensurePhase(state, phaseId, name) {
 
 function ensureStep(phase, stepId, name) {
   if (!Array.isArray(phase.steps)) phase.steps = [];
-  if (phase.steps.find(s => s.id === stepId)) return;
+  const existing = phase.steps.find(s => s.id === stepId);
+  if (existing) {
+    if (name && (!existing.name || existing.name === stepId)) {
+      existing.name = name;
+    }
+    return;
+  }
   phase.steps.push({
     id: stepId,
     name: name || stepId,
@@ -212,6 +269,21 @@ function fallbackPhase(stateFile, phaseId, status, artifacts, phaseName) {
     }
   }
   if (artifacts) phase.artifacts = artifacts;
+  // Auto-scan artifact directory on completion — fulfills the "制品会自动注册"
+  // contract documented in each SKILL.md. Merges scanned files into existing
+  // artifacts (doesn't overwrite explicit --artifacts entries).
+  if (status === 'completed') {
+    const projectRoot = resolve(stateFile, '..', '..', '..');
+    const projectName = basename(dirname(stateFile));
+    const scanned = scanPhaseArtifacts(projectRoot, projectName, phaseId);
+    if (scanned.length > 0) {
+      if (!Array.isArray(phase.artifacts)) phase.artifacts = [];
+      const existing = new Set(phase.artifacts.map(a => typeof a === 'string' ? a : a.path));
+      for (const a of scanned) {
+        if (!existing.has(a.path)) phase.artifacts.push(a);
+      }
+    }
+  }
 
   const level = status === 'completed' ? 'success' : status === 'blocked' ? 'error' : 'info';
   pushActivity(state, phaseId, 'phase-' + status, phase.name, level);
@@ -242,28 +314,17 @@ function fallbackActivity(stateFile, phase, action, message, level) {
   const effectivePhase = phase ?? state.currentPhase;
   if (effectivePhase !== undefined) ensurePhase(state, effectivePhase);
   pushActivity(state, effectivePhase, action, message, level || 'info');
-  // Auto-advance: ensure the current in-progress phase always has an in-progress step
-  // so the Dashboard header indicator shows what CC is doing right now
+  // Auto-advance: promote next pending step to in-progress when the current phase
+  // has no active step. NEVER create a new step from an activity message — that
+  // previously produced phantom steps from informational activities.
   const currentPhase = (state.phases || []).find(p => p.id === state.currentPhase);
   if (currentPhase && Array.isArray(currentPhase.steps) && currentPhase.status === 'in-progress') {
     const hasActive = currentPhase.steps.some(s => s.status === 'in-progress');
     if (!hasActive) {
-      // First try: mark the next pending step as in-progress
       const nextPending = currentPhase.steps.find(s => s.status === 'pending');
       if (nextPending) {
         nextPending.status = 'in-progress';
         nextPending.startedAt = new Date().toISOString();
-      } else {
-        // No pending steps left — create a new step from the activity message
-        const stepId = `step-${Date.now()}`;
-        currentPhase.steps.push({
-          id: stepId,
-          name: message || action,
-          status: 'in-progress',
-          startedAt: new Date().toISOString(),
-          completedAt: null,
-          detail: '',
-        });
       }
     }
   }

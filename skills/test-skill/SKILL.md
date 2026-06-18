@@ -260,12 +260,7 @@ node "$SKILL_DIR/dashboard/serve-preview.mjs" status \
 2. `mcp__plugin_playwright_playwright__browser_console_messages` (level=error) → 记录启动期致命错误作为基线
 3. `mcp__plugin_playwright_playwright__browser_snapshot` → 确认页面已渲染（无空白/404）
 
-**广播活动到 Dashboard**（仅 workflow 编排下）：
-```bash
-node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-  --type activity --phase 7 --action browser-env-ready \
-  --message "浏览器自动化环境就绪：$URL" --level info
-```
+> **不单独广播活动**。"浏览器自动化环境就绪：$URL" 信息放进步骤二开始时的 `--detail` 字段，避免触发 Dashboard 的 auto-advance 创建 phantom 步骤。
 
 **失败处理**：若 serve-preview 启动失败或 Playwright 不可达，按"降级策略"执行，不阻断后续静态分析类用例。
 
@@ -606,7 +601,7 @@ node "$SKILL_DIR/dashboard/serve-preview.mjs" stop \
 | 步骤 | 状态文件步骤 ID |
 |------|----------------|
 | 步骤一：测试计划 | `test-verify-step-1` |
-| 步骤 1.5：自动化浏览器环境准备 | （仅广播活动，不建 step） |
+| 步骤 1.5：自动化浏览器环境准备 | （不建 step，环境信息写入步骤二的 --detail） |
 | 步骤二：功能测试 | `test-verify-step-2` |
 | 步骤三：非功能测试 | `test-verify-step-3` |
 | 步骤四：视觉/设计一致性测试 | `test-verify-step-4` |
@@ -614,7 +609,7 @@ node "$SKILL_DIR/dashboard/serve-preview.mjs" stop \
 | 步骤六：Bug报告 | `test-verify-step-6` |
 | 步骤七：测试总结报告 | `test-verify-step-7` |
 
-> 步骤 1.5 不修改状态机 schema，通过 `--type activity --action browser-env-ready` 广播；步骤二的 `--detail` 字段可记录"自动化用例 X/Y"。
+> 步骤 1.5 不创建独立 step，也不广播独立活动（避免触发 auto-advance 创建 phantom 步骤）。环境就绪信息合并进步骤二的 `--detail` 字段，例如：`"浏览器自动化环境就绪 http://localhost:5173；自动化用例 12/15"`。
 
 ### 更新规则
 

@@ -9,8 +9,8 @@ try {
 
 import express from 'express';
 import { watch } from 'chokidar';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'fs';
-import { resolve, join, extname } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, readdirSync, statSync } from 'fs';
+import { resolve, join, extname, relative } from 'path';
 import { createServer } from 'http';
 import { exec } from 'child_process';
 
@@ -31,6 +31,47 @@ const DWS_DIR = join(PROJECT_ROOT, '.dws', PROJECT_NAME);
 const STATE_FILE = join(DWS_DIR, 'workflow-state.json');
 const PID_FILE = join(DWS_DIR, '.dashboard.pid');
 const PORT_FILE = join(DWS_DIR, '.dashboard.port');
+
+// Phase → artifact directory mapping. When a phase is marked completed, its
+// artifact subdirectory under .dws/{project}/ is auto-scanned and files are
+// registered into phase.artifacts. Phase 5 and 7 both write to test/ — pattern
+// distinguishes write-mode vs verify-mode outputs.
+const PHASE_ARTIFACT_DIRS = {
+  0: { dir: 'instruct' },
+  1: { dir: 'req' },
+  2: { dir: 'design' },
+  3: { dir: 'review' },
+  4: { dir: 'task' },
+  5: { dir: 'test', pattern: /^test-cases\.md$/ },
+  6: { dir: 'dev' },
+  7: { dir: 'test', pattern: /^(test-plan|test-summary|verification-report|bug-report-.*)\.md$/ },
+};
+
+function scanPhaseArtifacts(projectRoot, projectName, phaseId) {
+  const config = PHASE_ARTIFACT_DIRS[phaseId];
+  if (!config) return [];
+  const dwsDir = join(projectRoot, '.dws', projectName);
+  const dir = join(dwsDir, config.dir);
+  if (!existsSync(dir)) return [];
+  const out = [];
+  const walk = (d) => {
+    for (const name of readdirSync(d)) {
+      const full = join(d, name);
+      let st;
+      try { st = statSync(full); } catch { continue; }
+      if (st.isDirectory()) {
+        if (name === '.serve' || name === 'screenshots' || name === '.tmp') continue;
+        walk(full);
+      } else {
+        if (config.pattern && !config.pattern.test(name)) continue;
+        const rel = relative(dwsDir, full).replace(/\\/g, '/');
+        out.push({ path: rel, name });
+      }
+    }
+  };
+  walk(dir);
+  return out;
+}
 
 const app = express();
 const server = createServer(app);
@@ -105,9 +146,22 @@ function writeStateFile(state) {
 // not from a hardcoded template. Names come from CC via
 // --phase-name / --step-name params, or are derived from IDs.
 
+function isDefaultPhaseName(name, phaseId) {
+  return !name || name === `阶段 ${phaseId}`;
+}
+
 function ensurePhase(state, phaseId, name) {
   if (!Array.isArray(state.phases)) state.phases = [];
-  if (state.phases.find(p => p.id === phaseId)) return;
+  const existing = state.phases.find(p => p.id === phaseId);
+  if (existing) {
+    // Update name if currently default and a real name is now provided.
+    // This fixes phases that were pre-created (by an activity or step event)
+    // with the default "阶段 N" name before the skill sent the proper --phase-name.
+    if (name && isDefaultPhaseName(existing.name, phaseId)) {
+      existing.name = name;
+    }
+    return;
+  }
   state.phases.push({
     id: phaseId,
     name: name || `阶段 ${phaseId}`,
@@ -127,7 +181,14 @@ function ensurePhase(state, phaseId, name) {
 
 function ensureStep(phase, stepId, name) {
   if (!Array.isArray(phase.steps)) phase.steps = [];
-  if (phase.steps.find(s => s.id === stepId)) return;
+  const existing = phase.steps.find(s => s.id === stepId);
+  if (existing) {
+    // Update name if currently default (empty or equal to id) and a real name is provided.
+    if (name && (!existing.name || existing.name === stepId)) {
+      existing.name = name;
+    }
+    return;
+  }
   phase.steps.push({
     id: stepId,
     name: name || stepId,
@@ -350,6 +411,19 @@ app.post('/api/state/phase', (req, res) => {
       }
     }
     if (artifacts) phase.artifacts = artifacts;
+    // Auto-scan artifact directory on completion — fulfills the "制品会自动注册"
+    // contract documented in each SKILL.md. Merges scanned files into existing
+    // artifacts (doesn't overwrite explicit --artifacts entries).
+    if (status === 'completed') {
+      const scanned = scanPhaseArtifacts(PROJECT_ROOT, PROJECT_NAME, phaseId);
+      if (scanned.length > 0) {
+        if (!Array.isArray(phase.artifacts)) phase.artifacts = [];
+        const existing = new Set(phase.artifacts.map(a => typeof a === 'string' ? a : a.path));
+        for (const a of scanned) {
+          if (!existing.has(a.path)) phase.artifacts.push(a);
+        }
+      }
+    }
 
     const level = status === 'completed' ? 'success' : status === 'blocked' ? 'error' : 'info';
     pushActivity(state, phaseId, 'phase-' + status, phase.name, level);
@@ -386,28 +460,19 @@ app.post('/api/state/activity', (req, res) => {
       pushActivity(state, phaseId, entry.action, entry.message, entry.level || 'info');
     }
     // Auto-advance: ensure the current in-progress phase always has an in-progress step
-    // so the Dashboard header indicator shows what CC is doing right now
+    // so the Dashboard header indicator shows what CC is doing right now.
+    // Only promotes an existing pending step; NEVER creates a new step from an
+    // activity message — that previously produced phantom steps like "开始需求分析阶段"
+    // when informational activities (phase-started, browser-env-ready, etc.) arrived
+    // between steps. If there's no pending step, the header simply shows no active step.
     const currentPhase = (state.phases || []).find(p => p.id === state.currentPhase);
     if (currentPhase && currentPhase.status === 'in-progress' && Array.isArray(currentPhase.steps)) {
       const hasActive = currentPhase.steps.some(s => s.status === 'in-progress');
       if (!hasActive) {
-        // First try: mark the next pending step as in-progress
         const nextPending = currentPhase.steps.find(s => s.status === 'pending');
         if (nextPending) {
           nextPending.status = 'in-progress';
           nextPending.startedAt = new Date().toISOString();
-        } else if (entries.length > 0) {
-          // No pending steps left — create a new step from the latest activity
-          const lastEntry = entries[entries.length - 1];
-          const stepId = `step-${Date.now()}`;
-          currentPhase.steps.push({
-            id: stepId,
-            name: lastEntry.message || lastEntry.action,
-            status: 'in-progress',
-            startedAt: new Date().toISOString(),
-            completedAt: null,
-            detail: '',
-          });
         }
       }
     }
