@@ -4,29 +4,20 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, resolve } from 'path';
+import { parseArgs, toWinPath } from './lib/shared.mjs';
 
-function toWinPath(p) {
-  if (!p) return p;
-  if (process.platform !== 'win32') return p;
-  return p.replace(/^\/([a-zA-Z])(\/|$)/, (_, drive, sep) => drive.toUpperCase() + ':' + (sep ? '\\' : ''));
-}
-
-function parseArgs() {
-  const args = {};
-  const argv = process.argv.slice(2);
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i].startsWith('--')) {
-      const key = argv[i].slice(2);
-      const next = argv[i + 1];
-      if (next && !next.startsWith('--')) {
-        args[key] = next;
-        i++;
-      } else {
-        args[key] = true;
-      }
-    }
-  }
-  return args;
+// Escape JSON output for safe embedding inside <script>...</script>.
+//   '<'   -> < prevents '</script>' from closing the element
+//   U+2028/U+2029 (line/paragraph separator) -> JS string terminators in pre-ES2019 engines
+// We use String.fromCharCode to avoid putting raw U+2028/U+2029 in source (which would
+// break the regex literal in this file).
+const LS = String.fromCharCode(0x2028);
+const PS = String.fromCharCode(0x2029);
+function safeJsonForScript(obj) {
+  return JSON.stringify(obj)
+    .replace(/</g, '\\u003c')
+    .split(LS).join('\\u2028')
+    .split(PS).join('\\u2029');
 }
 
 async function main() {
@@ -40,7 +31,6 @@ async function main() {
     process.exit(1);
   }
 
-  // Read state
   let state;
   try {
     state = JSON.parse(readFileSync(stateFile, 'utf-8'));
@@ -62,7 +52,7 @@ async function main() {
   const template = readFileSync(templateFile, 'utf-8');
 
   // Inject static state before the main <script> tag (so IS_STATIC is defined before execution)
-  const injection = `<script>window.__STATIC_STATE__ = ${JSON.stringify(state)};</script>\n`;
+  const injection = `<script>window.__STATIC_STATE__ = ${safeJsonForScript(state)};</script>\n`;
   const output = template.replace('<script>', `${injection}<script>`);
 
   // Write output

@@ -17,14 +17,11 @@ import {
 } from 'fs';
 import { join } from 'path';
 import { request } from 'http';
+import { toWinPath } from './lib/shared.mjs';
 
-// ── Windows Git Bash path conversion (mirror notify-state.mjs) ────
-function toWinPath(p) {
-  if (!p) return p;
-  if (process.platform !== 'win32') return p;
-  return p.replace(/^\/([a-zA-Z])(\/|$)/, (_, drive, sep) => drive.toUpperCase() + ':' + (sep ? '\\' : ''));
-}
-
+// serve-preview needs positional args (start/stop/status), so it uses a
+// slightly different parseArgs than the other scripts. We define it locally
+// rather than reuse shared.parseArgs (which only handles --key value).
 function parseArgs() {
   const args = { _: [] };
   const argv = process.argv.slice(2);

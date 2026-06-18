@@ -1,46 +1,122 @@
 #!/usr/bin/env node
-// dashboard-ask.mjs — Dashboard Q&A helper: push question(s) + poll for answer + clear
+// dashboard-ask.mjs — Dashboard Q&A helper: push question(s) + wait for answer via SSE + clear
 // Usage:
-//   Push + poll:  node dashboard-ask.mjs --project-root ... --project-name ... --question "text" --header "title" --options '[...]'
-//   Push + poll:  node dashboard-ask.mjs --project-root ... --project-name ... --questions '[{...},{...}]'
+//   Push + wait:  node dashboard-ask.mjs --project-root ... --project-name ... --question "text" --header "title" --options '[...]'
+//   Push + wait:  node dashboard-ask.mjs --project-root ... --project-name ... --questions '[{...},{...}]'
 //   Poll only:    node dashboard-ask.mjs --project-root ... --project-name ... --poll-only [--timeout 1800]
+//
+// Exit codes / output prefixes (parsed by CC):
+//   ANSWER_RECEIVED:<json>  — got an answer, return immediately
+//   DASHBOARD_NOT_RUNNING   — port file missing at startup, fall back to AskUserQuestion
+//   DASHBOARD_GONE          — dashboard died mid-wait (SSE connection closed), fall back to AskUserQuestion
+//   ANSWER_TIMEOUT          — no answer within --timeout, fall back to AskUserQuestion
+//
+// Why SSE instead of file polling? The dashboard already broadcasts every state
+// mutation to /events subscribers. Subscribing gives us sub-second answer
+// latency and free death detection (connection closes when the dashboard
+// process dies) without polling the state file every 2s.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, resolve } from 'path';
+import { request } from 'http';
+import { parseArgs, toWinPath } from './lib/shared.mjs';
 
-function toWinPath(p) {
-  if (!p) return p;
-  if (process.platform !== 'win32') return p;
-  return p.replace(/^\/([a-zA-Z])(\/|$)/, (_, drive, sep) => drive.toUpperCase() + ':' + (sep ? '\\' : ''));
+function readPid(projectRoot, projectName) {
+  const pidFile = join(projectRoot, '.dws', projectName, '.dashboard.pid');
+  try {
+    if (existsSync(pidFile)) return parseInt(readFileSync(pidFile, 'utf-8').trim(), 10);
+  } catch {}
+  return null;
 }
 
-function parseArgs() {
-  const args = {};
-  const argv = process.argv.slice(2);
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i].startsWith('--')) {
-      const key = argv[i].slice(2);
-      const next = argv[i + 1];
-      if (next && !next.startsWith('--')) {
-        args[key] = next;
-        i++;
-      } else {
-        args[key] = true;
-      }
-    }
-  }
-  return args;
+function isProcessAlive(pid) {
+  if (!pid || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-function isDashboardRunning(projectRoot, projectName) {
+function readPort(projectRoot, projectName) {
   const portFile = join(projectRoot, '.dws', projectName, '.dashboard.port');
   try {
     if (existsSync(portFile)) {
       const port = parseInt(readFileSync(portFile, 'utf-8').trim(), 10);
-      if (port > 0 && port < 65536) return true;
+      if (port > 0 && port < 65536) return port;
     }
   } catch {}
-  return false;
+  return null;
+}
+
+function isDashboardRunning(projectRoot, projectName) {
+  const port = readPort(projectRoot, projectName);
+  if (!port) return false;
+  const pid = readPid(projectRoot, projectName);
+  return isProcessAlive(pid);
+}
+
+// ── SSE subscriber: connects to /events, parses state events, resolves when
+// pendingQuestion.status === 'answered'. Connection close → DASHBOARD_GONE.
+function waitForAnswerViaSse(port, timeoutSec) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let buffer = '';
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      try { req.destroy(); } catch {}
+      resolve(result);
+    };
+
+    const timeout = setTimeout(() => {
+      finish({ kind: 'timeout' });
+    }, timeoutSec * 1000);
+
+    const handleEventBlock = (block) => {
+      let eventType = '';
+      let dataStr = '';
+      for (const line of block.split('\n')) {
+        if (line.startsWith('event:')) eventType = line.slice(6).trim();
+        else if (line.startsWith('data:')) dataStr += line.slice(5).trim();
+      }
+      // Heartbeat comments (': heartbeat\n\n') produce empty event blocks — skip.
+      if (eventType !== 'state' || !dataStr) return;
+      try {
+        const state = JSON.parse(dataStr);
+        const pq = state.pendingQuestion;
+        if (pq && pq.status === 'answered') {
+          finish({ kind: 'answer', answer: pq.answer });
+        }
+      } catch {}
+    };
+
+    const req = request({
+      hostname: 'localhost',
+      port,
+      path: '/events',
+      method: 'GET',
+      headers: { 'Accept': 'text/event-stream', 'Cache-Control': 'no-cache' },
+      timeout: 5000,
+    }, (res) => {
+      if (res.statusCode !== 200) {
+        finish({ kind: 'gone' });
+        return;
+      }
+      res.on('data', (chunk) => {
+        buffer += chunk.toString();
+        let idx;
+        while ((idx = buffer.indexOf('\n\n')) >= 0) {
+          const block = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          if (block.trim()) handleEventBlock(block);
+        }
+      });
+      res.on('close', () => finish({ kind: 'gone' }));
+      res.on('error', () => finish({ kind: 'gone' }));
+    });
+
+    req.on('error', () => finish({ kind: 'gone' }));
+    req.on('timeout', () => finish({ kind: 'gone' }));
+    req.end();
+  });
 }
 
 async function main() {
@@ -91,44 +167,42 @@ async function main() {
     }
   }
 
-  // Step 2: Poll for answer
-  const stateFile = join(projectRoot, '.dws', projectName, 'workflow-state.json');
-  const timeout = parseInt(args.timeout) || 86400;
-  const interval = 3;
-  let elapsed = 0;
-
-  while (elapsed < timeout) {
-    try {
-      if (existsSync(stateFile)) {
-        const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
-        const pq = state.pendingQuestion;
-        if (pq && pq.status === 'answered') {
-          const answer = pq.answer;
-          if (answer.answers && Array.isArray(answer.answers)) {
-            console.log('ANSWER_RECEIVED:' + JSON.stringify(answer.answers));
-          } else {
-            console.log('ANSWER_RECEIVED:' + JSON.stringify({
-              selectedValues: answer.selectedValues,
-              customText: answer.customText || ''
-            }));
-          }
-
-          // Step 3: Clear question
-          try {
-            execSync(`node "${notifyState}" --project-root "${projectRoot}" --project-name "${projectName}" --type question-clear`, { stdio: 'pipe', timeout: 5000 });
-          } catch {}
-
-          process.exit(0);
-        }
-      }
-    } catch {}
-
-    await new Promise(r => setTimeout(r, interval * 1000));
-    elapsed += interval;
+  // Step 2: Wait for answer via SSE
+  const port = readPort(projectRoot, projectName);
+  if (!port) {
+    console.log('DASHBOARD_GONE');
+    process.exit(2);
   }
 
-  console.log('ANSWER_TIMEOUT');
-  process.exit(1);
+  const timeout = parseInt(args.timeout) || 86400;
+  const result = await waitForAnswerViaSse(port, timeout);
+
+  if (result.kind === 'timeout') {
+    console.log('ANSWER_TIMEOUT');
+    process.exit(1);
+  }
+  if (result.kind === 'gone') {
+    console.log('DASHBOARD_GONE');
+    process.exit(2);
+  }
+
+  // result.kind === 'answer'
+  const answer = result.answer;
+  if (answer.answers && Array.isArray(answer.answers)) {
+    console.log('ANSWER_RECEIVED:' + JSON.stringify(answer.answers));
+  } else {
+    console.log('ANSWER_RECEIVED:' + JSON.stringify({
+      selectedValues: answer.selectedValues,
+      customText: answer.customText || ''
+    }));
+  }
+
+  // Step 3: Clear question
+  try {
+    execSync(`node "${notifyState}" --project-root "${projectRoot}" --project-name "${projectName}" --type question-clear`, { stdio: 'pipe', timeout: 5000 });
+  } catch {}
+
+  process.exit(0);
 }
 
 main().catch(err => {

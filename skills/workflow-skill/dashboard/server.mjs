@@ -9,19 +9,16 @@ try {
 
 import express from 'express';
 import { watch } from 'chokidar';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, readdirSync, statSync } from 'fs';
-import { resolve, join, extname, relative } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'fs';
+import { resolve, join, extname } from 'path';
 import { createServer } from 'http';
 import { exec } from 'child_process';
-
-// ── Git Bash path conversion (Windows) ──────────────
-// Converts /d/project/... to D:\project\... on Windows
-function toWinPath(p) {
-  if (!p) return p;
-  if (process.platform !== 'win32') return p;
-  // Match Git Bash /drive-letter/path pattern: /c/Users/... → C:\Users\...
-  return p.replace(/^\/([a-zA-Z])(\/|$)/, (_, drive, sep) => drive.toUpperCase() + ':' + (sep ? '\\' : ''));
-}
+import {
+  parseArgs, toWinPath, parseId, computeHash,
+  scanPhaseArtifacts, readStateFile as readStateFileShared,
+  writeStateFileAtomic, ensurePhase, ensureStep, pushActivity,
+  markSiblingsCompleted, promoteNextPending,
+} from './lib/shared.mjs';
 
 const args = parseArgs();
 const PORT = args.port || parseInt(process.env.DWS_PORT) || 3456;
@@ -32,47 +29,6 @@ const STATE_FILE = join(DWS_DIR, 'workflow-state.json');
 const PID_FILE = join(DWS_DIR, '.dashboard.pid');
 const PORT_FILE = join(DWS_DIR, '.dashboard.port');
 
-// Phase → artifact directory mapping. When a phase is marked completed, its
-// artifact subdirectory under .dws/{project}/ is auto-scanned and files are
-// registered into phase.artifacts. Phase 5 and 7 both write to test/ — pattern
-// distinguishes write-mode vs verify-mode outputs.
-const PHASE_ARTIFACT_DIRS = {
-  0: { dir: 'instruct' },
-  1: { dir: 'req' },
-  2: { dir: 'design' },
-  3: { dir: 'review' },
-  4: { dir: 'task' },
-  5: { dir: 'test', pattern: /^test-cases\.md$/ },
-  6: { dir: 'dev' },
-  7: { dir: 'test', pattern: /^(test-plan|test-summary|verification-report|bug-report-.*)\.md$/ },
-};
-
-function scanPhaseArtifacts(projectRoot, projectName, phaseId) {
-  const config = PHASE_ARTIFACT_DIRS[phaseId];
-  if (!config) return [];
-  const dwsDir = join(projectRoot, '.dws', projectName);
-  const dir = join(dwsDir, config.dir);
-  if (!existsSync(dir)) return [];
-  const out = [];
-  const walk = (d) => {
-    for (const name of readdirSync(d)) {
-      const full = join(d, name);
-      let st;
-      try { st = statSync(full); } catch { continue; }
-      if (st.isDirectory()) {
-        if (name === '.serve' || name === 'screenshots' || name === '.tmp') continue;
-        walk(full);
-      } else {
-        if (config.pattern && !config.pattern.test(name)) continue;
-        const rel = relative(dwsDir, full).replace(/\\/g, '/');
-        out.push({ path: rel, name });
-      }
-    }
-  };
-  walk(dir);
-  return out;
-}
-
 const app = express();
 const server = createServer(app);
 
@@ -81,25 +37,6 @@ app.use(express.json());
 const clients = new Set();
 let currentState = null;
 let lastStateHash = '';
-
-// ── CLI arg parser ──────────────────────────────────
-function parseArgs() {
-  const args = {};
-  const argv = process.argv.slice(2);
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i].startsWith('--')) {
-      const key = argv[i].slice(2);
-      const next = argv[i + 1];
-      if (next && !next.startsWith('--')) {
-        args[key] = next;
-        i++;
-      } else {
-        args[key] = true;
-      }
-    }
-  }
-  return args;
-}
 
 // ── MIME types ──────────────────────────────────────
 const MIME = {
@@ -116,144 +53,29 @@ const MIME = {
   '.js': 'application/javascript; charset=utf-8',
 };
 
-// ── State file reading (with retry for atomic writes) ──
+// ── State file reading (delegates to shared; closes over STATE_FILE) ──
 function readStateFile() {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      if (!existsSync(STATE_FILE)) return null;
-      const raw = readFileSync(STATE_FILE, 'utf-8');
-      let parsed = JSON.parse(raw);
-      // Handle double-encoded JSON (file contains a JSON string instead of object)
-      if (typeof parsed === 'string') parsed = JSON.parse(parsed);
-      return parsed;
-    } catch {
-      if (attempt === 0) continue; // file may be mid-atomic-rename
-    }
-  }
-  return null;
+  return readStateFileShared(STATE_FILE);
 }
 
 // ── Atomic state file write ─────────────────────────
 function writeStateFile(state) {
-  const tmp = STATE_FILE + '.tmp';
-  const data = JSON.stringify(state, null, 2);
-  writeFileSync(tmp, data, 'utf-8');
-  renameSync(tmp, STATE_FILE);
-}
-
-// ── Dynamic phase/step creation ──────────────────────
-// Phases and steps are created on-the-fly from CC execution,
-// not from a hardcoded template. Names come from CC via
-// --phase-name / --step-name params, or are derived from IDs.
-
-function isDefaultPhaseName(name, phaseId) {
-  return !name || name === `阶段 ${phaseId}`;
-}
-
-function ensurePhase(state, phaseId, name) {
-  if (!Array.isArray(state.phases)) state.phases = [];
-  const existing = state.phases.find(p => p.id === phaseId);
-  if (existing) {
-    // Update name if currently default and a real name is now provided.
-    // This fixes phases that were pre-created (by an activity or step event)
-    // with the default "阶段 N" name before the skill sent the proper --phase-name.
-    if (name && isDefaultPhaseName(existing.name, phaseId)) {
-      existing.name = name;
-    }
-    return;
-  }
-  state.phases.push({
-    id: phaseId,
-    name: name || `阶段 ${phaseId}`,
-    status: 'pending',
-    startedAt: null,
-    completedAt: null,
-    steps: [],
-    artifacts: [],
-  });
-  // Sort by id (numeric or string); non-numeric IDs go last
-  state.phases.sort((a, b) => {
-    const na = typeof a.id === 'number' ? a.id : Infinity;
-    const nb = typeof b.id === 'number' ? b.id : Infinity;
-    return na - nb;
-  });
-}
-
-function ensureStep(phase, stepId, name) {
-  if (!Array.isArray(phase.steps)) phase.steps = [];
-  const existing = phase.steps.find(s => s.id === stepId);
-  if (existing) {
-    // Update name if currently default (empty or equal to id) and a real name is provided.
-    if (name && (!existing.name || existing.name === stepId)) {
-      existing.name = name;
-    }
-    return;
-  }
-  phase.steps.push({
-    id: stepId,
-    name: name || stepId,
-    status: 'pending',
-    startedAt: null,
-    completedAt: null,
-    detail: '',
-  });
-}
-
-// ── Activity log helper ─────────────────────────────
-function pushActivity(state, phase, action, message, level) {
-  if (!Array.isArray(state.activityLog)) state.activityLog = [];
-  state.activityLog.push({
-    timestamp: new Date().toISOString(),
-    phase,
-    action,
-    message,
-    level: level || 'info'
-  });
-  if (state.activityLog.length > 200) {
-    state.activityLog = state.activityLog.slice(-200);
-  }
-}
-
-// ── Step auto-advance helpers ───────────────────────
-// CC is unreliable about sending --status in-progress. It often jumps straight
-// to --status completed without ever marking the step (or the previous one) as
-// in-progress. These helpers keep the dashboard honest:
-//   - markSiblingsCompleted: when a step goes in-progress, complete any other
-//     in-progress step in the same phase (you can't have two at once)
-//   - promoteNextPending: when a step reaches a terminal state, promote the
-//     next pending step so the dashboard always shows what CC is doing now
-function markSiblingsCompleted(phase, exceptStepId, now) {
-  if (!Array.isArray(phase.steps)) return;
-  for (const s of phase.steps) {
-    if (s.id === exceptStepId) continue;
-    if (s.status === 'in-progress') {
-      s.status = 'completed';
-      if (!s.startedAt) s.startedAt = now;
-      s.completedAt = now;
-    }
-  }
-}
-
-function promoteNextPending(phase, now) {
-  if (!Array.isArray(phase.steps)) return;
-  const hasActive = phase.steps.some(s => s.status === 'in-progress');
-  if (hasActive) return;
-  const next = phase.steps.find(s => s.status === 'pending');
-  if (next) {
-    next.status = 'in-progress';
-    next.startedAt = now;
-  }
+  writeStateFileAtomic(STATE_FILE, state);
 }
 
 // ── Shared: apply state mutation + persist + broadcast ──
+// Prefer in-memory currentState: every API-driven mutation we apply updates
+// currentState synchronously, and chokidar keeps it in sync with external
+// writes (notify-state.mjs fallback path) within ~300ms. Reading from disk
+// on every mutation is wasted I/O when we already hold the authoritative
+// copy in memory. Fall back to disk only on cold start (currentState null)
+// or if the on-disk file is somehow newer than what we have.
 function mutateState(fn) {
-  let state = readStateFile();
-  // If file is missing but we have in-memory state, recover from memory
-  if (!state && currentState) {
-    state = currentState;
-    console.warn('State file missing, recovering from in-memory state');
+  let state = currentState;
+  if (!state) {
+    state = readStateFile();
+    if (!state) return null;
   }
-  if (!state) return null;
   fn(state);
   state.updatedAt = new Date().toISOString();
   writeStateFile(state);
@@ -264,36 +86,63 @@ function mutateState(fn) {
 }
 
 // ── SSE broadcast ───────────────────────────────────
+// Broadcasts are deferred via setImmediate so request handlers return fast
+// instead of blocking on N client writes. Slow clients whose write buffer
+// stays full (res.write returns false) get disconnected after a short grace
+// period — without this, one stuck browser tab blocks the whole server.
 function broadcastState(state) {
-  const data = JSON.stringify(state);
-  for (const res of clients) {
-    try {
-      res.write(`event: state\ndata: ${data}\n\n`);
-    } catch {
-      clients.delete(res);
+  setImmediate(() => {
+    const data = JSON.stringify(state);
+    for (const res of clients) {
+      try {
+        const ok = res.write(`event: state\ndata: ${data}\n\n`);
+        if (!ok) handleBackpressure(res);
+      } catch {
+        forceDisconnect(res);
+      }
     }
-  }
+  });
 }
 
 function broadcastError(message) {
-  for (const res of clients) {
-    try {
-      res.write(`event: error\ndata: ${JSON.stringify({ message })}\n\n`);
-    } catch {
-      clients.delete(res);
+  setImmediate(() => {
+    const payload = `event: error\ndata: ${JSON.stringify({ message })}\n\n`;
+    for (const res of clients) {
+      try {
+        const ok = res.write(payload);
+        if (!ok) handleBackpressure(res);
+      } catch {
+        forceDisconnect(res);
+      }
     }
+  });
+}
+
+// Track how long a client has been under backpressure. If it persists beyond
+// BACKPRESSURE_GRACE_MS, drop the connection rather than let it stall the
+// broadcast loop indefinitely.
+const backpressureSince = new WeakMap();
+const BACKPRESSURE_GRACE_MS = 2000;
+
+function handleBackpressure(res) {
+  const now = Date.now();
+  const since = backpressureSince.get(res);
+  if (!since) {
+    backpressureSince.set(res, now);
+    res.once('drain', () => backpressureSince.delete(res));
+    return;
   }
+  if (now - since > BACKPRESSURE_GRACE_MS) {
+    forceDisconnect(res);
+  }
+}
+
+function forceDisconnect(res) {
+  try { res.end(); } catch {}
+  clients.delete(res);
 }
 
 // ── File change detection ────────────────────────────
-function computeHash(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-  }
-  return h;
-}
-
 function checkAndBroadcast() {
   const state = readStateFile();
   if (!state) {
@@ -323,8 +172,9 @@ function startWatcher() {
     console.error('Watcher error:', err.message);
   });
 
-  // Fallback poll (catches changes API-based writes may trigger chokidar to miss)
-  setInterval(checkAndBroadcast, 1000);
+  // chokidar uses usePolling:true with 300ms interval — that already catches
+  // all writes (including API-driven ones), so no redundant 1s fallback is
+  // needed. Adding one would just double-broadcast on every change.
 }
 
 // ══════════════════════════════════════════════════════
@@ -372,12 +222,13 @@ app.post('/api/state/init', (req, res) => {
 // Update step status
 app.post('/api/state/step', (req, res) => {
   const { phaseId, stepId, status, detail, result, phaseName, stepName } = req.body;
+  const normPhaseId = parseId(phaseId);
   if (stepId === undefined || !status) {
     return res.status(400).json({ success: false, error: 'Missing stepId or status' });
   }
   const updated = mutateState(state => {
-    ensurePhase(state, phaseId, phaseName);
-    const phase = (state.phases || []).find(p => p.id === phaseId);
+    ensurePhase(state, normPhaseId, phaseName);
+    const phase = (state.phases || []).find(p => p.id === normPhaseId);
     if (!phase) return;
     ensureStep(phase, stepId, stepName);
     const step = (phase.steps || []).find(s => s.id === stepId);
@@ -409,7 +260,7 @@ app.post('/api/state/step', (req, res) => {
     // Activity log for state transitions
     if (prevStatus !== status) {
       const level = status === 'completed' ? 'success' : status === 'blocked' ? 'error' : 'info';
-      pushActivity(state, phaseId ?? state.currentPhase, 'step-' + status, step.name, level);
+      pushActivity(state, normPhaseId ?? state.currentPhase, 'step-' + status, step.name, level);
     }
   });
   if (!updated) return res.status(404).json({ success: false, error: 'State file not found or step not found' });
@@ -419,12 +270,13 @@ app.post('/api/state/step', (req, res) => {
 // Update phase status
 app.post('/api/state/phase', (req, res) => {
   const { phaseId, status, artifacts, phaseName } = req.body;
-  if (phaseId === undefined || !status) {
+  const normPhaseId = parseId(phaseId);
+  if (normPhaseId === undefined || !status) {
     return res.status(400).json({ success: false, error: 'Missing phaseId or status' });
   }
   const updated = mutateState(state => {
-    ensurePhase(state, phaseId, phaseName);
-    const phase = (state.phases || []).find(p => p.id === phaseId);
+    ensurePhase(state, normPhaseId, phaseName);
+    const phase = (state.phases || []).find(p => p.id === normPhaseId);
     if (!phase) return;
 
     phase.status = status;
@@ -456,7 +308,7 @@ app.post('/api/state/phase', (req, res) => {
     // contract documented in each SKILL.md. Merges scanned files into existing
     // artifacts (doesn't overwrite explicit --artifacts entries).
     if (status === 'completed') {
-      const scanned = scanPhaseArtifacts(PROJECT_ROOT, PROJECT_NAME, phaseId);
+      const scanned = scanPhaseArtifacts(PROJECT_ROOT, PROJECT_NAME, normPhaseId);
       if (scanned.length > 0) {
         if (!Array.isArray(phase.artifacts)) phase.artifacts = [];
         const existing = new Set(phase.artifacts.map(a => typeof a === 'string' ? a : a.path));
@@ -467,7 +319,7 @@ app.post('/api/state/phase', (req, res) => {
     }
 
     const level = status === 'completed' ? 'success' : status === 'blocked' ? 'error' : 'info';
-    pushActivity(state, phaseId, 'phase-' + status, phase.name, level);
+    pushActivity(state, normPhaseId, 'phase-' + status, phase.name, level);
   });
   if (!updated) return res.status(404).json({ success: false, error: 'State file not found or phase not found' });
   res.json({ success: true });
@@ -476,13 +328,14 @@ app.post('/api/state/phase', (req, res) => {
 // Update overall workflow status
 app.post('/api/state/overall', (req, res) => {
   const { currentPhase, overallStatus, currentIteration, totalIterations } = req.body;
+  const normCurrentPhase = parseId(currentPhase);
   const updated = mutateState(state => {
-    if (currentPhase !== undefined) state.currentPhase = currentPhase;
+    if (normCurrentPhase !== undefined) state.currentPhase = normCurrentPhase;
     if (overallStatus !== undefined) state.overallStatus = overallStatus;
     if (currentIteration !== undefined) state.currentIteration = currentIteration;
     if (totalIterations !== undefined) state.totalIterations = totalIterations;
 
-    pushActivity(state, currentPhase ?? state.currentPhase, 'status-update', overallStatus || 'in-progress', 'info');
+    pushActivity(state, normCurrentPhase ?? state.currentPhase, 'status-update', overallStatus || 'in-progress', 'info');
   });
   if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
   res.json({ success: true });
@@ -497,25 +350,18 @@ app.post('/api/state/activity', (req, res) => {
   const updated = mutateState(state => {
     for (const entry of entries) {
       if (!entry.action || !entry.message) continue;
-      const phaseId = entry.phase ?? state.currentPhase;
+      const phaseId = parseId(entry.phase) ?? state.currentPhase;
       pushActivity(state, phaseId, entry.action, entry.message, entry.level || 'info');
     }
     // Auto-advance: ensure the current in-progress phase always has an in-progress step
     // so the Dashboard header indicator shows what CC is doing right now.
-    // Only promotes an existing pending step; NEVER creates a new step from an
-    // activity message — that previously produced phantom steps like "开始需求分析阶段"
-    // when informational activities (phase-started, browser-env-ready, etc.) arrived
+    // Reuses promoteNextPending so the rule is identical to the step handler's.
+    // NEVER creates a new step from an activity message — that previously produced
+    // phantom steps like "开始需求分析阶段" when informational activities arrived
     // between steps. If there's no pending step, the header simply shows no active step.
     const currentPhase = (state.phases || []).find(p => p.id === state.currentPhase);
-    if (currentPhase && currentPhase.status === 'in-progress' && Array.isArray(currentPhase.steps)) {
-      const hasActive = currentPhase.steps.some(s => s.status === 'in-progress');
-      if (!hasActive) {
-        const nextPending = currentPhase.steps.find(s => s.status === 'pending');
-        if (nextPending) {
-          nextPending.status = 'in-progress';
-          nextPending.startedAt = new Date().toISOString();
-        }
-      }
+    if (currentPhase && currentPhase.status === 'in-progress') {
+      promoteNextPending(currentPhase, new Date().toISOString());
     }
   });
   if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });

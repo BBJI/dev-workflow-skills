@@ -443,11 +443,13 @@ function connectSSE() {
     }
   });
 
+  // Server can push named `error` events with JSON data — log and stay connected.
   es.addEventListener('error', (e) => {
-    try {
-      const data = JSON.parse(e.data);
-      console.warn('[DWS] SSE server error:', data.message);
-    } catch {}
+    if (e.data) {
+      try { console.warn('[DWS] SSE server error:', JSON.parse(e.data).message); } catch {}
+    }
+    // When e.data is null/undefined this is a transport-level error (connection
+    // lost). EventSource fires onerror too in that case, which handles reconnect.
   });
 
   es.onerror = () => {
@@ -815,12 +817,16 @@ function toggleStep(stepId) {
 }
 
 function renderResultContent(result) {
-  if (!result) return '';
-  // If result is a string, render as pre-wrapped text with basic markdown
-  if (typeof result === 'string') {
-    return escHtml(result);
+  if (result === null || result === undefined || result === '') return '';
+  // Primitives (string/number/boolean) — render directly
+  if (typeof result !== 'object') {
+    return escHtml(String(result));
   }
-  // If result is an object with structured data
+  // Arrays — render as a JSON block (no structured-data contract for arrays)
+  if (Array.isArray(result)) {
+    return escHtml(JSON.stringify(result, null, 2));
+  }
+  // Object with structured-data contract
   let html = '';
   if (result.summary) {
     html += `<p>${escHtml(result.summary)}</p>`;
@@ -847,8 +853,40 @@ function renderResultContent(result) {
   return html || escHtml(JSON.stringify(result, null, 2));
 }
 
+// Track which static-side-panel state we've rendered, so we can skip the full
+// panel rebuild when only the activity log grew. The activity log is the only
+// part of the side panel that updates on every state change — rebuilding the
+// tracker tables each time is wasted work and resets hover/scroll state.
+let sidePanelStaticHash = '';
+let lastRenderedActivityLen = 0;
+
 function renderSidePanel(state) {
   const el = document.getElementById('panelSide');
+
+  // Hash the static (non-activity-log) portion of the side panel state. If
+  // unchanged since last render, we keep the existing tracker DOM and only
+  // update the activity log incrementally — see renderActivityLogIncremental.
+  const staticSlice = {
+    consensusTracker: state.consensusTracker,
+    bugTracker: state.bugTracker,
+  };
+  const staticHash = JSON.stringify(staticSlice);
+  const staticChanged = staticHash !== sidePanelStaticHash;
+
+  if (staticChanged) {
+    sidePanelStaticHash = staticHash;
+    el.innerHTML = renderSidePanelStatic(state) + '<div class="activity-log"><h3>Activity Log</h3><div class="log-list" id="logList"></div></div>';
+    // Static panel rebuilt — log DOM is empty, reset incremental state
+    lastRenderedActivityLen = 0;
+  }
+
+  renderActivityLogIncremental(state.activityLog || []);
+
+  const logList = document.getElementById('logList');
+  if (logList) logList.scrollTop = logList.scrollHeight;
+}
+
+function renderSidePanelStatic(state) {
   let html = '';
 
   // Consensus tracker (Phase 3)
@@ -948,31 +986,55 @@ function renderSidePanel(state) {
     html += '</div>';
   }
 
-  // Activity log
-  html += '<div class="activity-log"><h3>Activity Log</h3><div class="log-list" id="logList">';
-  const logs = (state.activityLog || []).slice(-50);
-  logs.forEach((entry, idx) => {
-    const logKey = `log-${idx}`;
-    const isExpanded = expandedLogs.has(logKey);
+  return html;
+}
+
+// Append-only activity log renderer. Avoids rebuilding all 50 log entries on
+// every state change — only newly-seen entries are DOM-appended, and the
+// oldest are pruned when the visible cap is exceeded. Preserves expand/collapse
+// state of existing entries because we never touch their DOM nodes.
+const ACTIVITY_LOG_VISIBLE_CAP = 50;
+
+function renderActivityLogIncremental(activityLog) {
+  const logList = document.getElementById('logList');
+  if (!logList) return;
+
+  const logs = Array.isArray(activityLog) ? activityLog.slice(-ACTIVITY_LOG_VISIBLE_CAP) : [];
+  // If the source array shrank (e.g. state reset / re-init), rebuild from
+  // scratch — incremental append can't represent removals from the middle.
+  if (logs.length < lastRenderedActivityLen) {
+    logList.innerHTML = '';
+    lastRenderedActivityLen = 0;
+  }
+
+  // Append entries we haven't rendered yet. Each entry produces two DOM
+  // nodes (the row + its detail panel), so we batch via a DocumentFragment.
+  const frag = document.createDocumentFragment();
+  for (let i = lastRenderedActivityLen; i < logs.length; i++) {
+    const entry = logs[i];
+    const logKey = `log-${i}`;
     const isQA = entry.action === 'question-answered';
-    html += `<div class="log-entry" onclick="toggleLog('${logKey}')">
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = `<div class="log-entry" onclick="toggleLog('${logKey}')">
       <span class="log-level ${entry.level || 'info'}"></span>
       <span class="log-time">${fmtTime(entry.timestamp)}</span>
       <span class="log-phase">${isQA ? '💬' : entry.phase}</span>
       <span class="log-msg">${isQA ? '💬 ' : ''}${escHtml(entry.message)}</span>
-    </div>`;
-    html += `<div class="log-detail-panel${isExpanded ? ' open' : ''}" id="log-${logKey}">
+    </div>
+    <div class="log-detail-panel" id="log-${logKey}">
       <div class="log-detail-action">${escHtml(entry.action || '')} &middot; 阶段 ${entry.phase}</div>
       <div class="log-detail-msg">${escHtml(entry.message)}</div>
     </div>`;
-  });
-  html += '</div></div>';
+    while (wrapper.firstChild) frag.appendChild(wrapper.firstChild);
+  }
+  if (frag.childNodes.length > 0) logList.appendChild(frag);
+  lastRenderedActivityLen = logs.length;
 
-  el.innerHTML = html;
-
-  // Auto-scroll log
-  const logList = document.getElementById('logList');
-  if (logList) logList.scrollTop = logList.scrollHeight;
+  // Prune oldest entries beyond the visible cap. Each entry occupies 2 nodes.
+  const maxNodes = ACTIVITY_LOG_VISIBLE_CAP * 2;
+  while (logList.childNodes.length > maxNodes) {
+    logList.removeChild(logList.firstChild);
+  }
 }
 
 function toggleTrackerRound(roundKey) {
@@ -1580,7 +1642,20 @@ function escHtml(s) {
 }
 
 function escAttr(s) {
-  return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  // Escape for safe embedding inside a single-quoted JS string literal that
+  // itself sits inside a double-quoted HTML attribute, e.g.
+  //   <a onclick="openArtifact('ESCAPED', ...)">
+  // - & < > " are HTML-escaped so the attribute can't be closed early
+  // - ' and \ are JS-escaped so the string literal can't be closed early
+  // Order matters: escape \ before ' so the \ we add escaping ' isn't itself
+  // re-escaped (would double the backslash).
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'");
 }
 
 function getConvergence(rounds) {

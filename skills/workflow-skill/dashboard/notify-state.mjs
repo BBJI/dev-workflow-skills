@@ -2,76 +2,16 @@
 // notify-state.mjs — Helper script for CC to update workflow state via Dashboard API
 // Falls back to direct file write when Dashboard is not running
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, readdirSync, statSync } from 'fs';
-import { join, resolve, dirname, basename, relative } from 'path';
+import { readFileSync, existsSync, mkdirSync } from 'fs';
+import { join, resolve, dirname, basename } from 'path';
 import { request } from 'http';
-
-// ── Phase → artifact directory mapping ─────────────
-// When a phase is marked completed, its artifact subdirectory under
-// .dws/{project}/ is auto-scanned and files are registered into phase.artifacts.
-// Phase 5 and 7 both write to test/ — pattern distinguishes write-mode vs verify-mode outputs.
-const PHASE_ARTIFACT_DIRS = {
-  0: { dir: 'instruct' },
-  1: { dir: 'req' },
-  2: { dir: 'design' },
-  3: { dir: 'review' },
-  4: { dir: 'task' },
-  5: { dir: 'test', pattern: /^test-cases\.md$/ },
-  6: { dir: 'dev' },
-  7: { dir: 'test', pattern: /^(test-plan|test-summary|verification-report|bug-report-.*)\.md$/ },
-};
-
-function scanPhaseArtifacts(projectRoot, projectName, phaseId) {
-  const config = PHASE_ARTIFACT_DIRS[phaseId];
-  if (!config) return [];
-  const dwsDir = join(projectRoot, '.dws', projectName);
-  const dir = join(dwsDir, config.dir);
-  if (!existsSync(dir)) return [];
-  const out = [];
-  const walk = (d) => {
-    for (const name of readdirSync(d)) {
-      const full = join(d, name);
-      let st;
-      try { st = statSync(full); } catch { continue; }
-      if (st.isDirectory()) {
-        if (name === '.serve' || name === 'screenshots' || name === '.tmp') continue;
-        walk(full);
-      } else {
-        if (config.pattern && !config.pattern.test(name)) continue;
-        const rel = relative(dwsDir, full).replace(/\\/g, '/');
-        out.push({ path: rel, name });
-      }
-    }
-  };
-  walk(dir);
-  return out;
-}
-
-// ── Git Bash path conversion (Windows) ──────────────
-function toWinPath(p) {
-  if (!p) return p;
-  if (process.platform !== 'win32') return p;
-  return p.replace(/^\/([a-zA-Z])(\/|$)/, (_, drive, sep) => drive.toUpperCase() + ':' + (sep ? '\\' : ''));
-}
-
-// ── Parse CLI args ──────────────────────────────────
-function parseArgs() {
-  const args = {};
-  const argv = process.argv.slice(2);
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i].startsWith('--')) {
-      const key = argv[i].slice(2);
-      const next = argv[i + 1];
-      if (next && !next.startsWith('--')) {
-        args[key] = next;
-        i++;
-      } else {
-        args[key] = true;
-      }
-    }
-  }
-  return args;
-}
+import { createConnection } from 'net';
+import {
+  parseArgs, toWinPath, parseId,
+  scanPhaseArtifacts, readStateFile, writeStateFileAtomic,
+  ensurePhase, ensureStep, pushActivity,
+  markSiblingsCompleted, promoteNextPending,
+} from './lib/shared.mjs';
 
 // ── HTTP POST helper ────────────────────────────────
 function httpPost(port, path, body) {
@@ -106,7 +46,11 @@ function httpPost(port, path, body) {
 }
 
 // ── Find Dashboard port ────────────────────────────
-function findDashboardPort(projectRoot, projectName) {
+// Reads .dashboard.port, then verifies the dashboard is actually listening.
+// Without the probe, a stale port file (left behind by a crashed dashboard)
+// causes every notify call to wait 3s for the API timeout before falling
+// back to file write — a death spiral that makes the dashboard feel broken.
+function readPortFile(projectRoot, projectName) {
   const portFile = join(projectRoot, '.dws', projectName, '.dashboard.port');
   try {
     if (existsSync(portFile)) {
@@ -114,127 +58,38 @@ function findDashboardPort(projectRoot, projectName) {
       if (port > 0 && port < 65536) return port;
     }
   } catch {}
-  // Try default range
   return null;
 }
 
-// ── Direct file write fallback ──────────────────────
-function readStateFile(stateFile) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      if (!existsSync(stateFile)) return null;
-      let parsed = JSON.parse(readFileSync(stateFile, 'utf-8'));
-      // Handle double-encoded JSON (file contains a JSON string instead of object)
-      if (typeof parsed === 'string') parsed = JSON.parse(parsed);
-      return parsed;
-    } catch {
-      if (attempt === 0) continue;
-    }
-  }
+function probePort(port) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const socket = createConnection({ host: 'localhost', port }, () => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(true);
+    });
+    socket.setTimeout(300);
+    socket.on('error', () => {
+      if (settled) return;
+      settled = true;
+      resolve(false);
+    });
+    socket.on('timeout', () => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(false);
+    });
+  });
+}
+
+async function findDashboardPort(projectRoot, projectName) {
+  const port = readPortFile(projectRoot, projectName);
+  if (!port) return null;
+  if (await probePort(port)) return port;
   return null;
-}
-
-function writeStateFileAtomic(stateFile, state) {
-  const tmp = stateFile + '.tmp';
-  writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf-8');
-  renameSync(tmp, stateFile);
-}
-
-function pushActivity(state, phase, action, message, level) {
-  if (!Array.isArray(state.activityLog)) state.activityLog = [];
-  state.activityLog.push({
-    timestamp: new Date().toISOString(),
-    phase,
-    action,
-    message,
-    level: level || 'info'
-  });
-  if (state.activityLog.length > 200) {
-    state.activityLog = state.activityLog.slice(-200);
-  }
-}
-
-// ── Dynamic phase/step creation ──────────────────────
-function parseId(val) {
-  if (val === undefined || val === null) return val;
-  const n = Number(val);
-  return Number.isNaN(n) ? val : n;
-}
-
-function isDefaultPhaseName(name, phaseId) {
-  return !name || name === `阶段 ${phaseId}`;
-}
-
-function ensurePhase(state, phaseId, name) {
-  if (!Array.isArray(state.phases)) state.phases = [];
-  const existing = state.phases.find(p => p.id === phaseId);
-  if (existing) {
-    if (name && isDefaultPhaseName(existing.name, phaseId)) {
-      existing.name = name;
-    }
-    return;
-  }
-  state.phases.push({
-    id: phaseId,
-    name: name || `阶段 ${phaseId}`,
-    status: 'pending',
-    startedAt: null,
-    completedAt: null,
-    steps: [],
-    artifacts: [],
-  });
-  state.phases.sort((a, b) => {
-    const na = typeof a.id === 'number' ? a.id : Infinity;
-    const nb = typeof b.id === 'number' ? b.id : Infinity;
-    return na - nb;
-  });
-}
-
-function ensureStep(phase, stepId, name) {
-  if (!Array.isArray(phase.steps)) phase.steps = [];
-  const existing = phase.steps.find(s => s.id === stepId);
-  if (existing) {
-    if (name && (!existing.name || existing.name === stepId)) {
-      existing.name = name;
-    }
-    return;
-  }
-  phase.steps.push({
-    id: stepId,
-    name: name || stepId,
-    status: 'pending',
-    startedAt: null,
-    completedAt: null,
-    detail: '',
-  });
-}
-
-// ── Step auto-advance helpers (mirror server.mjs) ──
-// CC is unreliable about sending --status in-progress. Keep the dashboard
-// honest even on the fallback path: when a step goes in-progress, complete
-// any stale in-progress sibling; when a step reaches a terminal state,
-// promote the next pending step so the dashboard always shows current work.
-function markSiblingsCompleted(phase, exceptStepId, now) {
-  if (!Array.isArray(phase.steps)) return;
-  for (const s of phase.steps) {
-    if (s.id === exceptStepId) continue;
-    if (s.status === 'in-progress') {
-      s.status = 'completed';
-      if (!s.startedAt) s.startedAt = now;
-      s.completedAt = now;
-    }
-  }
-}
-
-function promoteNextPending(phase, now) {
-  if (!Array.isArray(phase.steps)) return;
-  const hasActive = phase.steps.some(s => s.status === 'in-progress');
-  if (hasActive) return;
-  const next = phase.steps.find(s => s.status === 'pending');
-  if (next) {
-    next.status = 'in-progress';
-    next.startedAt = now;
-  }
 }
 
 // ── Direct file mutation fallbacks ─────────────────
@@ -425,7 +280,7 @@ async function main() {
   }
 
   // Try Dashboard API first
-  const port = findDashboardPort(projectRoot, projectName);
+  const port = await findDashboardPort(projectRoot, projectName);
   if (port) {
     let path, body;
     switch (type) {

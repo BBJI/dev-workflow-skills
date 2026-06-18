@@ -276,30 +276,7 @@ T001 → T002 → T004 → T005 → T006（预计[X]天）
 
 ### 更新规则
 
-通过 `notify-state.mjs` 辅助脚本更新状态（Dashboard 运行时走 API 即时广播，未运行时 fallback 到原子文件写入）。
-
-**定位脚本**：
-```bash
-SKILL_DIR=$(find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname "$SKILL_DIR")
-```
-
-**步骤开始时**：
-```bash
-node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-  --type step --phase-id 4 --step-id {步骤ID} --status in-progress --detail "简要描述"
-```
-
-**步骤完成时**：
-```bash
-node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-  --type step --phase-id 4 --step-id {步骤ID} --status completed --result "步骤执行结果摘要"
-```
-
-**追加活动日志**（步骤开始/完成时可选附加）：
-```bash
-node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-  --type activity --phase 4 --action step-started --message "{步骤名}" --level info
-```
+通过 `notify-state.mjs` 辅助脚本更新状态（Dashboard 运行时走 API 即时广播，未运行时 fallback 到原子文件写入）。本阶段（phase-id = 4）的步骤开始/完成命令、活动日志追加、`--result` 必填等通用约定见 [workflow-skill/references/sub-skill-state-updates.md](../workflow-skill/references/sub-skill-state-updates.md)。
 
 **步骤六完成后**：同时更新 `totalIterations` 字段为迭代计划中的迭代数：
 ```bash

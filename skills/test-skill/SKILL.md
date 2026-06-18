@@ -613,30 +613,7 @@ node "$SKILL_DIR/dashboard/serve-preview.mjs" stop \
 
 ### 更新规则
 
-通过 `notify-state.mjs` 辅助脚本更新状态（Dashboard 运行时走 API 即时广播，未运行时 fallback 到原子文件写入）。
-
-**定位脚本**：
-```bash
-SKILL_DIR=$(find ~/.claude/plugins/cache -path "*/workflow-skill/SKILL.md" -print -quit 2>/dev/null) && SKILL_DIR=$(dirname "$SKILL_DIR")
-```
-
-**步骤开始时**（根据当前模式使用对应的 phase-id）：
-```bash
-node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-  --type step --phase-id {5或7} --step-id {步骤ID} --status in-progress --detail "简要描述"
-```
-
-**步骤完成时**（根据当前模式使用对应的 phase-id）：
-```bash
-node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-  --type step --phase-id {5或7} --step-id {步骤ID} --status completed --result "步骤执行结果摘要"
-```
-
-**追加活动日志**（步骤开始/完成时可选附加）：
-```bash
-node "$SKILL_DIR/dashboard/notify-state.mjs" --project-root "$PROJECT_ROOT" --project-name "$PROJECT_NAME" \
-  --type activity --phase {5或7} --action step-started --message "{步骤名}" --level info
-```
+通过 `notify-state.mjs` 辅助脚本更新状态（Dashboard 运行时走 API 即时广播，未运行时 fallback 到原子文件写入）。步骤开始/完成命令、活动日志追加、`--result` 必填等通用约定见 [workflow-skill/references/sub-skill-state-updates.md](../workflow-skill/references/sub-skill-state-updates.md)。
 
 > **phase-id 说明**：测试用例编写模式使用 phase-id `5`，测试验证模式使用 phase-id `7`。请根据当前执行模式替换对应的 phase-id 值。
 
