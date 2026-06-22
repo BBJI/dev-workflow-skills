@@ -1033,14 +1033,15 @@ function renderActivityLogIncremental(activityLog) {
     const isQA = entry.action === 'question-answered';
     const isExpanded = expandedLogs.has(logKey);
     const wrapper = document.createElement('div');
+    const phaseLabel = entry.phase === undefined || entry.phase === null ? '-' : entry.phase;
     wrapper.innerHTML = `<div class="log-entry" onclick="toggleLog('${logKey}')">
       <span class="log-level ${entry.level || 'info'}"></span>
       <span class="log-time">${fmtTime(entry.timestamp)}</span>
-      <span class="log-phase">${isQA ? '💬' : entry.phase}</span>
+      <span class="log-phase">${isQA ? '💬' : phaseLabel}</span>
       <span class="log-msg">${isQA ? '💬 ' : ''}${escHtml(entry.message)}</span>
     </div>
     <div class="log-detail-panel${isExpanded ? ' open' : ''}" id="log-${logKey}">
-      <div class="log-detail-action">${escHtml(entry.action || '')} &middot; 阶段 ${entry.phase}</div>
+      <div class="log-detail-action">${escHtml(entry.action || '')} &middot; 阶段 ${phaseLabel}</div>
       <div class="log-detail-msg">${escHtml(entry.message)}</div>
     </div>`;
     while (wrapper.firstChild) frag.appendChild(wrapper.firstChild);

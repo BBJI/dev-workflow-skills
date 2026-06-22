@@ -121,7 +121,7 @@ function fallbackStep(stateFile, phaseId, stepId, status, detail, result, phaseN
 
   if (prevStatus !== status) {
     const level = status === 'completed' ? 'success' : status === 'blocked' ? 'error' : 'info';
-    pushActivity(state, phaseId, 'step-' + status, step.name, level);
+    pushActivity(state, phaseId ?? state.currentPhase ?? 0, 'step-' + status, step.name, level);
   }
 
   state.updatedAt = now;
@@ -176,7 +176,7 @@ function fallbackPhase(stateFile, phaseId, status, artifacts, phaseName) {
   }
 
   const level = status === 'completed' ? 'success' : status === 'blocked' ? 'error' : 'info';
-  pushActivity(state, phaseId, 'phase-' + status, phase.name, level);
+  pushActivity(state, phaseId ?? state.currentPhase ?? 0, 'phase-' + status, phase.name, level);
   state.updatedAt = now;
   writeStateFileAtomic(stateFile, state);
   console.log(`OK phase ${phaseId} -> ${status}`);
@@ -191,7 +191,7 @@ function fallbackOverall(stateFile, currentPhase, overallStatus, currentIteratio
   if (currentIteration !== undefined) state.currentIteration = currentIteration;
   if (totalIterations !== undefined) state.totalIterations = totalIterations;
 
-  pushActivity(state, currentPhase ?? state.currentPhase, 'status-update', overallStatus || 'in-progress', 'info');
+  pushActivity(state, currentPhase ?? state.currentPhase ?? 0, 'status-update', overallStatus || 'in-progress', 'info');
   state.updatedAt = new Date().toISOString();
   writeStateFileAtomic(stateFile, state);
   console.log(`OK overall status=${overallStatus || 'unchanged'}`);
@@ -203,7 +203,7 @@ function fallbackActivity(stateFile, phase, action, message, level) {
 
   const effectivePhase = phase ?? state.currentPhase;
   if (effectivePhase !== undefined) ensurePhase(state, effectivePhase);
-  pushActivity(state, effectivePhase, action, message, level || 'info');
+  pushActivity(state, effectivePhase ?? 0, action, message, level || 'info');
   // Auto-advance: promote next pending step to in-progress when the current phase
   // has no active step. NEVER create a new step from an activity message — that
   // previously produced phantom steps from informational activities.

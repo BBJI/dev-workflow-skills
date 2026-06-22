@@ -345,7 +345,8 @@ app.post('/api/state/overall', (req, res) => {
     if (currentIteration !== undefined) state.currentIteration = currentIteration;
     if (totalIterations !== undefined) state.totalIterations = totalIterations;
 
-    pushActivity(state, normCurrentPhase ?? state.currentPhase, 'status-update', overallStatus || 'in-progress', 'info');
+    const activityPhase = normCurrentPhase ?? state.currentPhase ?? 0;
+    pushActivity(state, activityPhase, 'status-update', overallStatus || 'in-progress', 'info');
   });
   if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
   res.json({ success: true });
@@ -360,7 +361,7 @@ app.post('/api/state/activity', (req, res) => {
   const updated = mutateState(state => {
     for (const entry of entries) {
       if (!entry.action || !entry.message) continue;
-      const phaseId = parseId(entry.phase) ?? state.currentPhase;
+      const phaseId = parseId(entry.phase) ?? state.currentPhase ?? 0;
       pushActivity(state, phaseId, entry.action, entry.message, entry.level || 'info');
     }
     // Auto-advance: ensure the current in-progress phase always has an in-progress step
@@ -536,7 +537,7 @@ app.post('/api/question/answer', (req, res) => {
       };
       answerData = state.pendingQuestion.answer;
       const allValues = answers.flatMap(a => a.selectedValues || []);
-      pushActivity(state, state.currentPhase, 'question-answered', `回答: ${allValues.join(', ')}`, 'info');
+      pushActivity(state, state.currentPhase ?? 0, 'question-answered', `回答: ${allValues.join(', ')}`, 'info');
     } else if (Array.isArray(selectedValues)) {
       // Legacy single answer
       state.pendingQuestion.answer = {
@@ -545,7 +546,7 @@ app.post('/api/question/answer', (req, res) => {
         answeredAt: new Date().toISOString()
       };
       answerData = state.pendingQuestion.answer;
-      pushActivity(state, state.currentPhase, 'question-answered', `回答: ${selectedValues.join(', ')}${customText ? ' + 自定义' : ''}`, 'info');
+      pushActivity(state, state.currentPhase ?? 0, 'question-answered', `回答: ${selectedValues.join(', ')}${customText ? ' + 自定义' : ''}`, 'info');
     }
   });
   if (!updated || !answerData) return res.status(404).json({ success: false, error: 'Question not found or already answered' });
@@ -564,7 +565,7 @@ app.post('/api/question/push', (req, res) => {
       const prevQ = state.pendingQuestion.questions
         ? state.pendingQuestion.questions.map(q => q.question?.substring(0, 20)).join('; ')
         : state.pendingQuestion.question?.substring(0, 40);
-      pushActivity(state, state.currentPhase, 'question-superseded', `前一个问题被新问题取代: ${prevQ}`, 'warning');
+      pushActivity(state, state.currentPhase ?? 0, 'question-superseded', `前一个问题被新问题取代: ${prevQ}`, 'warning');
     }
     questionId = id || `q-${String(Date.now()).slice(-6)}`;
 
@@ -589,7 +590,7 @@ app.post('/api/question/push', (req, res) => {
         createdAt: new Date().toISOString()
       };
       const summary = questions.map(q => q.question?.substring(0, 30)).join('; ');
-      pushActivity(state, state.currentPhase, 'question-pushed', `CC 提问 (${questions.length}个问题): ${summary}`, 'info');
+      pushActivity(state, state.currentPhase ?? 0, 'question-pushed', `CC 提问 (${questions.length}个问题): ${summary}`, 'info');
     } else {
       // Legacy format: single question → wrap in questions array
       state.pendingQuestion = {
@@ -610,7 +611,7 @@ app.post('/api/question/push', (req, res) => {
         answer: null,
         createdAt: new Date().toISOString()
       };
-      pushActivity(state, state.currentPhase, 'question-pushed', `CC 提问: ${question.substring(0, 50)}`, 'info');
+      pushActivity(state, state.currentPhase ?? 0, 'question-pushed', `CC 提问: ${question.substring(0, 50)}`, 'info');
     }
   });
   if (!updated) return res.status(404).json({ success: false, error: 'State file not found' });
@@ -623,7 +624,7 @@ app.post('/api/question/clear', (_req, res) => {
     if (state.pendingQuestion) {
       if (state.pendingQuestion.status !== 'answered') {
         state.pendingQuestion = null;
-        pushActivity(state, state.currentPhase, 'question-cleared', '问题已清理（CLI 已处理）', 'info');
+        pushActivity(state, state.currentPhase ?? 0, 'question-cleared', '问题已清理（CLI 已处理）', 'info');
       } else {
         // Already answered, just clean up
         state.pendingQuestion = null;
