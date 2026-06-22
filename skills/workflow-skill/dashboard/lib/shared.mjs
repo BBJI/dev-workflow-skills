@@ -206,6 +206,12 @@ export function isDefaultPhaseName(name, phaseId) {
 
 export function ensurePhase(state, phaseId, name) {
   if (!Array.isArray(state.phases)) state.phases = [];
+  if (phaseId === undefined || phaseId === null) {
+    // Defensive guard: callers should resolve a real id before calling.
+    // Returning without creating prevents phantom phases with id=undefined
+    // that render as "undefined" in the Dashboard timeline.
+    return null;
+  }
   const existing = state.phases.find(p => p.id === phaseId);
   if (existing) {
     // Update name if currently default and a real name is now provided.

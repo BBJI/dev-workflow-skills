@@ -97,9 +97,17 @@ function fallbackStep(stateFile, phaseId, stepId, status, detail, result, phaseN
   const state = readStateFile(stateFile);
   if (!state) { console.error('State file not found:', stateFile); process.exit(1); }
 
-  ensurePhase(state, phaseId, phaseName);
-  const phase = (state.phases || []).find(p => p.id === phaseId);
-  if (!phase) { console.error('Phase not found:', phaseId); process.exit(1); }
+  // Fall back to currentPhase if caller omitted --phase-id — matches the API
+  // handler. Prevents ensurePhase from creating a phantom phase with
+  // id=undefined / name="阶段 undefined".
+  const effectivePhaseId = phaseId ?? state.currentPhase;
+  if (effectivePhaseId === undefined) {
+    console.error('Missing --phase-id and state has no currentPhase');
+    process.exit(1);
+  }
+  ensurePhase(state, effectivePhaseId, phaseName);
+  const phase = (state.phases || []).find(p => p.id === effectivePhaseId);
+  if (!phase) { console.error('Phase not found:', effectivePhaseId); process.exit(1); }
   ensureStep(phase, stepId, stepName);
   const step = (phase.steps || []).find(s => s.id === stepId);
   if (!step) { console.error('Step not found:', stepId); process.exit(1); }

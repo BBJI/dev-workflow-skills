@@ -550,7 +550,10 @@ function renderState(state) {
 
 function renderTimeline(state) {
   const el = document.getElementById('timeline');
-  const phases = state.phases || [];
+  // Filter out any phases missing a valid id — these are phantom phases
+  // created by older bugs (ensurePhase with undefined phaseId) and would
+  // render as "undefined" in the timeline circles.
+  const phases = (state.phases || []).filter(p => p.id !== undefined && p.id !== null);
   let html = '';
 
   if (phases.length === 0) {

@@ -232,11 +232,17 @@ app.post('/api/state/init', (req, res) => {
 // Update step status
 app.post('/api/state/step', (req, res) => {
   const { phaseId, stepId, status, detail, result, phaseName, stepName } = req.body;
-  const normPhaseId = parseId(phaseId);
+  let normPhaseId = parseId(phaseId);
   if (stepId === undefined || !status) {
     return res.status(400).json({ success: false, error: 'Missing stepId or status' });
   }
   const updated = mutateState(state => {
+    // Fall back to currentPhase if caller omitted --phase-id. Without this,
+    // ensurePhase(state, undefined, ...) would create a phantom phase with
+    // id=undefined and name="阶段 undefined", which then renders as "undefined"
+    // in the Dashboard timeline circles.
+    if (normPhaseId === undefined) normPhaseId = state.currentPhase;
+    if (normPhaseId === undefined) return;
     ensurePhase(state, normPhaseId, phaseName);
     const phase = (state.phases || []).find(p => p.id === normPhaseId);
     if (!phase) return;
