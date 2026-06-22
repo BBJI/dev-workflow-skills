@@ -26,6 +26,12 @@ export function findDwsRoot() {
 // `includePortScan` is true and no port files are found, falls back to
 // scanning the default port range 3456-3465 — this catches dashboards
 // started from a different cwd whose .dws we can't locate.
+//
+// PID liveness check: a stale `.dashboard.port` (left behind by a crashed
+// dashboard) can collide with a completely different project's dashboard
+// that reused the same port. Without this check, a hook in project A would
+// push questions to project B's dashboard — manifesting as "Dashboard
+// shows questions I didn't ask" and "answered but workflow didn't continue".
 export function findDashboardPorts({ includePortScan = false } = {}) {
   const dwsRoot = findDwsRoot();
   const ports = [];
@@ -37,7 +43,23 @@ export function findDashboardPorts({ includePortScan = false } = {}) {
         const portFile = join(dwsRoot, entry.name, '.dashboard.port');
         if (!existsSync(portFile)) continue;
         const port = parseInt(readFileSync(portFile, 'utf-8').trim(), 10);
-        if (port > 0 && port < 65536) ports.push(port);
+        if (!(port > 0 && port < 65536)) continue;
+        // Verify the owning dashboard is still alive. A dead PID means the
+        // port file is stale — the port may have been reused by another
+        // dashboard (or another app entirely), and pushing to it would
+        // pollute that other project's state.
+        const pidFile = join(dwsRoot, entry.name, '.dashboard.pid');
+        let pidAlive = false;
+        try {
+          if (existsSync(pidFile)) {
+            const pid = parseInt(readFileSync(pidFile, 'utf-8').trim(), 10);
+            if (pid > 0) {
+              try { process.kill(pid, 0); pidAlive = true; } catch {}
+            }
+          }
+        } catch {}
+        if (!pidAlive) continue;
+        ports.push(port);
       }
     } catch {}
   }
@@ -48,8 +70,11 @@ export function findDashboardPorts({ includePortScan = false } = {}) {
 }
 
 // ── Find project root and name from .dws ───────────
-// Returns the first project subdir that has a `.dashboard.port` file.
-// Used by push-question to pass --project-root/--project-name to dashboard-ask.
+// Returns the first project subdir that has a LIVE dashboard (port file +
+// live PID). Used by push-question to pass --project-root/--project-name to
+// dashboard-ask. Skipping stale entries prevents the hook from routing
+// questions to a different project's dashboard that happens to have reused
+// the same port.
 export function findProjectInfo() {
   const dwsRoot = findDwsRoot();
   if (!dwsRoot) return null;
@@ -57,9 +82,21 @@ export function findProjectInfo() {
   try {
     const entries = readdirSync(dwsRoot, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.isDirectory() && existsSync(join(dwsRoot, entry.name, '.dashboard.port'))) {
-        return { root, name: entry.name };
-      }
+      if (!entry.isDirectory()) continue;
+      const portFile = join(dwsRoot, entry.name, '.dashboard.port');
+      if (!existsSync(portFile)) continue;
+      const pidFile = join(dwsRoot, entry.name, '.dashboard.pid');
+      let pidAlive = false;
+      try {
+        if (existsSync(pidFile)) {
+          const pid = parseInt(readFileSync(pidFile, 'utf-8').trim(), 10);
+          if (pid > 0) {
+            try { process.kill(pid, 0); pidAlive = true; } catch {}
+          }
+        }
+      } catch {}
+      if (!pidAlive) continue;
+      return { root, name: entry.name };
     }
   } catch {}
   return null;

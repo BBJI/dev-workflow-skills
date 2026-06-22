@@ -28,7 +28,11 @@ import {
 } from './lib/shared.mjs';
 
 const args = parseArgs();
-const PORT = args.port || parseInt(process.env.DWS_PORT) || 3456;
+// parseInt(args.port): parseArgs returns strings, so `args.port || ...` would
+// keep "3456" as a string. Without parseInt, the EADDRINUSE retry does
+// `"3456" + 1 === "34561"` (string concat) instead of 3457, landing the
+// dashboard on a wild port like 34561.
+const PORT = parseInt(args.port) || parseInt(process.env.DWS_PORT) || 3456;
 const PROJECT_ROOT = resolve(toWinPath(args['project-root']) || process.cwd());
 const PROJECT_NAME = args['project-name'] || 'default';
 const DWS_DIR = join(PROJECT_ROOT, '.dws', PROJECT_NAME);

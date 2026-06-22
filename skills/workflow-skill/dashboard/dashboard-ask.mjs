@@ -59,6 +59,11 @@ function isDashboardRunning(projectRoot, projectName) {
 // might be the FIRST instance's name (see findProjectInfo in hook-common.mjs).
 // Listening on every dashboard under .dws/ ensures we hear the answer no
 // matter which instance the user actually interacted with.
+//
+// PID liveness check: stale .dashboard.port files (from crashed dashboards)
+// must be skipped — the port may have been reused by a different project's
+// dashboard, and listening there would either never receive an answer or
+// pick up an answer meant for a different question.
 function findAllDashboardPorts(projectRoot) {
   const dwsDir = join(projectRoot, '.dws');
   const ports = [];
@@ -69,7 +74,19 @@ function findAllDashboardPorts(projectRoot) {
       const portFile = join(dwsDir, entry.name, '.dashboard.port');
       if (!existsSync(portFile)) continue;
       const port = parseInt(readFileSync(portFile, 'utf-8').trim(), 10);
-      if (port > 0 && port < 65536) ports.push(port);
+      if (!(port > 0 && port < 65536)) continue;
+      const pidFile = join(dwsDir, entry.name, '.dashboard.pid');
+      let pidAlive = false;
+      try {
+        if (existsSync(pidFile)) {
+          const pid = parseInt(readFileSync(pidFile, 'utf-8').trim(), 10);
+          if (pid > 0) {
+            try { process.kill(pid, 0); pidAlive = true; } catch {}
+          }
+        }
+      } catch {}
+      if (!pidAlive) continue;
+      ports.push(port);
     }
   } catch {}
   return ports;

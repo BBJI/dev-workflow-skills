@@ -85,7 +85,12 @@ export function scanPhaseArtifacts(projectRoot, projectName, phaseId) {
         walk(full, depth + 1);
       } else {
         if (config.pattern && !config.pattern.test(name)) continue;
-        const rel = relative(dwsDir, full).replace(/\\/g, '/');
+        // Paths must be relative to projectRoot (not dwsDir) so the /artifacts/*
+        // handler — which resolves against PROJECT_ROOT — can find the file.
+        // Relative-to-dwsDir paths like "req/requirements.md" produce 404
+        // because the server looks for {PROJECT_ROOT}/req/requirements.md
+        // instead of {PROJECT_ROOT}/.dws/{project}/req/requirements.md.
+        const rel = relative(projectRoot, full).replace(/\\/g, '/');
         out.push({ path: rel, name });
       }
     }

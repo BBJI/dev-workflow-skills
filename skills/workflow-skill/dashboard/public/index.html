@@ -550,10 +550,14 @@ function renderState(state) {
 
 function renderTimeline(state) {
   const el = document.getElementById('timeline');
-  // Filter out any phases missing a valid id — these are phantom phases
-  // created by older bugs (ensurePhase with undefined phaseId) and would
-  // render as "undefined" in the timeline circles.
-  const phases = (state.phases || []).filter(p => p.id !== undefined && p.id !== null);
+  // Assign fallback ids to phases that lack one. Some CC init templates write
+  // phases without an `id` field; the previous filter (p.id !== undefined)
+  // silently dropped ALL of them, leaving the timeline empty. Falling back to
+  // the array index keeps them visible and clickable.
+  const phases = (state.phases || []).map((p, i) => ({
+    ...p,
+    id: (p.id !== undefined && p.id !== null) ? p.id : i,
+  }));
   let html = '';
 
   if (phases.length === 0) {
