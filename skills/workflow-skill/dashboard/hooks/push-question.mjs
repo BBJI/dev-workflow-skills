@@ -116,15 +116,17 @@ async function main() {
           'AskUserQuestion 已被拒绝——问题已推送到 Dashboard。',
           '请立即执行以下 Bash 命令等待用户在 Dashboard 中的回答（超时24小时，覆盖隔夜场景）：',
           '',
-          `RESULT=$(node "${askScript}" --project-root "${projectRoot}" --project-name "${projectName}" --listen-only --timeout 86400)`,
+          `RESULT=$(node "${askScript}" --project-root "${projectRoot}" --project-name "${projectName}" --question-id "${payload.id}" --listen-only --timeout 86400)`,
           'if echo "$RESULT" | grep -q "^ANSWER_RECEIVED:"; then',
           '  ANSWER=$(echo "$RESULT" | sed \'s/^ANSWER_RECEIVED://\')',
           '  # 解析 ANSWER JSON 并继续工作流',
           'elif [ "$RESULT" = "ANSWER_TIMEOUT" ]; then',
           '  # 超时24小时，回退到 AskUserQuestion 让用户在 CLI 回答',
+          'elif [ "$RESULT" = "DASHBOARD_GONE" ]; then',
+          '  # Dashboard 中途崩溃，回退到 AskUserQuestion 让用户在 CLI 回答',
           'fi',
           '',
-          '如果等待超时，必须回退使用 AskUserQuestion 让用户在 CLI 中回答。',
+          '如果等待超时或 Dashboard 崩溃，必须回退使用 AskUserQuestion 让用户在 CLI 中回答。',
           '如果会话中断后恢复，先检查 workflow-state.json 中是否有遗留的 Dashboard 答案。'
         ].join('\n')
       }
